@@ -1,0 +1,7 @@
+[package]
+name = "slack-status"
+version = "0.1.0"
+authors = ["nsd"]
+
+[dependencies]
+my_internet_ip = "0.1.1"
