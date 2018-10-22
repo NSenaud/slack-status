@@ -1,43 +1,45 @@
 #[macro_use] extern crate log;
+#[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 extern crate env_logger;
 extern crate my_internet_ip;
 extern crate reqwest;
+extern crate toml;
 
 use std::net::{IpAddr, Ipv4Addr};
 
+#[derive(Deserialize)]
 struct Location {
     ip: IpAddr,
     text: String,
     emoji: String,
 }
 
+#[derive(Deserialize)]
 struct Config {
     token: String,
     locations: Vec<Location>,
 }
 
 fn get_config() -> Config {
-    Config {
-        token: "".to_string(),
-        locations: vec![
-            Location {
-                ip: IpAddr::V4(Ipv4Addr::new(176, 187, 98, 85)),
-                text: "Maison".to_string(),
-                emoji: ":house:".to_string(),
-            },
-            Location {
-                ip: IpAddr::V4(Ipv4Addr::new(78, 193, 77, 48)),
-                text: "ipso Saint-Martin".to_string(),
-                emoji: ":ipso:".to_string(),
-            },
-            Location {
-                ip: IpAddr::V4(Ipv4Addr::new(81, 250, 187, 198)),
-                text: "ipso Nation".to_string(),
-                emoji: ":ipso:".to_string(),
-            }
-        ]
-    }
+    toml::from_str(r#"
+        token = ""
+
+        [[locations]]
+        ip = "176.187.98.85"
+        text = "Maison"
+        emoji = ":house:"
+
+        [[locations]]
+        ip = "78.193.77.48"
+        text = "ipso Saint-Martin"
+        emoji = ":ipso:"
+
+        [[locations]]
+        ip = "81.250.187.198"
+        text = "ipso Nation"
+        emoji = ":ipso:"
+    "#).unwrap()
 }
 
 fn main() {
