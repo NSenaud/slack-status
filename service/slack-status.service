@@ -1,0 +1,9 @@
+[Unit]
+Description=Update Slack status with current location
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/slack-status
+
+[Install]
+WantedBy=timers.target
