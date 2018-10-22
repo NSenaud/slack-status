@@ -1,5 +1,6 @@
-#[macro_use]
-extern crate serde_json;
+#[macro_use] extern crate log;
+#[macro_use] extern crate serde_json;
+extern crate env_logger;
 extern crate my_internet_ip;
 extern crate reqwest;
 
@@ -40,11 +41,14 @@ fn get_config() -> Config {
 }
 
 fn main() {
+    env_logger::init();
+
     let config = get_config();
 
+    info!("Requesting public ip...");
     let ip: ::std::net::IpAddr = match my_internet_ip::get() {
         Ok(ip) => ip,
-        Err(e) => panic!("Could not get IP: {:?}", e),
+        Err(e) => panic!("Could not get public IP: {:#?}", e),
     };
 
     let mut status_text: String = "en deplacement".to_string();
@@ -52,7 +56,7 @@ fn main() {
 
     for location in config.locations {
         if location.ip == ip {
-            println!("{} => {}", location.ip, location.text);
+            info!("{} => {}", location.ip, location.text);
             status_text = location.text;
             status_emoji = location.emoji;
         }
@@ -74,5 +78,5 @@ fn main() {
         Err(e) => panic!("Failed to change status: {:?}", e),
     };
 
-    println!("{:#?}", res);
+    debug!("{:#?}", res);
 }
