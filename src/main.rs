@@ -1,12 +1,20 @@
-#[macro_use] extern crate log;
-#[macro_use] extern crate serde_derive;
-#[macro_use] extern crate serde_json;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate serde_json;
+extern crate directories;
 extern crate env_logger;
 extern crate my_internet_ip;
 extern crate reqwest;
 extern crate toml;
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::fs::File;
+use std::io::prelude::*;
+use std::net::IpAddr;
+
+use directories::ProjectDirs;
 
 #[derive(Deserialize)]
 struct Location {
@@ -21,31 +29,38 @@ struct Config {
     locations: Vec<Location>,
 }
 
-fn get_config() -> Config {
-    toml::from_str(r#"
-        token = ""
+fn get_config() -> Option<Config> {
+    // Get standard configuration directory:
+    // * Linux: /home/alice/.config/slack-status
+    // * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status
+    // * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config
+    if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
+        let config_dir = proj_dirs.config_dir();
+        info!("Looking for configuration file in: {:?}", config_dir);
 
-        [[locations]]
-        ip = "176.187.98.85"
-        text = "Maison"
-        emoji = ":house:"
+        let config_file_path = config_dir.join("config.toml");
 
-        [[locations]]
-        ip = "78.193.77.48"
-        text = "ipso Saint-Martin"
-        emoji = ":ipso:"
+        let mut f = File::open(config_file_path).expect("file not found");
 
-        [[locations]]
-        ip = "81.250.187.198"
-        text = "ipso Nation"
-        emoji = ":ipso:"
-    "#).unwrap()
+        let mut contents = String::new();
+        f.read_to_string(&mut contents)
+            .expect("something went wrong reading the file");
+
+        let config = toml::from_str(contents.as_str()).unwrap();
+
+        Some(config)
+    } else {
+        panic!("Cannot find configuration directory.");
+    }
 }
 
 fn main() {
     env_logger::init();
 
-    let config = get_config();
+    let config = match get_config() {
+        Some(config) => config,
+        None => panic!("Can't find configuration file."),
+    };
 
     info!("Requesting public ip...");
     let ip: ::std::net::IpAddr = match my_internet_ip::get() {
@@ -53,7 +68,7 @@ fn main() {
         Err(e) => panic!("Could not get public IP: {:#?}", e),
     };
 
-    let mut status_text: String = "en deplacement".to_string();
+    let mut status_text: String = "en déplacement".to_string();
     let mut status_emoji: String = ":mountain_railway:".to_string();
 
     for location in config.locations {

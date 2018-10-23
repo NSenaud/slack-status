@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["Nicolas Senaud <nicolas@senaud.fr>"]
 
 [dependencies]
-log = "0.4.5"
+directories = "1.0.2"
 env_logger = "0.5.13"
+log = "0.4.5"
 my_internet_ip = "0.1.1"
 reqwest = "0.9.3"
 serde = "1.0.80"
