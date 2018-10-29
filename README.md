@@ -1,6 +1,13 @@
 Slack Status
 ============
 
+Compilation
+-----------
+
+```bash
+cargo build --release
+```
+
 Development
 -----------
 

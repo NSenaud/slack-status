@@ -16,6 +16,12 @@ use std::net::IpAddr;
 
 use directories::ProjectDirs;
 
+#[derive(Deserialize, Clone)]
+struct Status {
+    text: String,
+    emoji: String,
+}
+
 #[derive(Deserialize)]
 struct Location {
     ip: IpAddr,
@@ -26,14 +32,16 @@ struct Location {
 #[derive(Deserialize)]
 struct Config {
     token: String,
+    defaults: Option<Status>,
     locations: Vec<Location>,
 }
 
+/// Get configuration from standard configuration directory:
+/// 
+/// * Linux: /home/alice/.config/slack-status
+/// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status
+/// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config
 fn get_config() -> Option<Config> {
-    // Get standard configuration directory:
-    // * Linux: /home/alice/.config/slack-status
-    // * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status
-    // * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config
     if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
         let config_dir = proj_dirs.config_dir();
         info!("Looking for configuration file in: {:?}", config_dir);
@@ -54,6 +62,34 @@ fn get_config() -> Option<Config> {
     }
 }
 
+fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Status> {
+    for location in locations {
+        if location.ip == *ip {
+            info!("{} => {}", location.ip, location.text);
+            return Some(
+                Status {
+                    text: location.text.clone(),
+                    emoji: location.emoji.clone(),
+                }
+            );
+        }
+    }
+
+    None
+}
+
+fn get_status_from(config: Config, ip: &IpAddr) -> Status {
+    match get_status_from_location(&config.locations, ip) {
+        Some(status) => status,
+        None => config.defaults.unwrap_or(
+            Status {
+                text: "on the move".to_string(),
+                emoji: ":mountain_railway:".to_string(),
+            }
+        )
+    }
+}
+
 fn main() {
     env_logger::init();
 
@@ -62,31 +98,24 @@ fn main() {
         None => panic!("Can't find configuration file."),
     };
 
+    let token = config.token.clone();
+
     info!("Requesting public ip...");
     let ip: ::std::net::IpAddr = match my_internet_ip::get() {
         Ok(ip) => ip,
         Err(e) => panic!("Could not get public IP: {:#?}", e),
     };
 
-    let mut status_text: String = "en déplacement".to_string();
-    let mut status_emoji: String = ":mountain_railway:".to_string();
-
-    for location in config.locations {
-        if location.ip == ip {
-            info!("{} => {}", location.ip, location.text);
-            status_text = location.text;
-            status_emoji = location.emoji;
-        }
-    }
+    let status = get_status_from(config, &ip);
 
     let client = reqwest::Client::new();
     let res: reqwest::Response = match client
         .post("https://slack.com/api/users.profile.set")
-        .bearer_auth(config.token)
+        .bearer_auth(token)
         .json(&json!({
                 "profile": {
-                    "status_text": status_text,
-                    "status_emoji": status_emoji,
+                    "status_text": status.text,
+                    "status_emoji": status.emoji,
                     "status_expiration": 0
                 }
             })).send()
