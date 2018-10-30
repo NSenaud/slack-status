@@ -37,68 +37,106 @@ struct Config {
 }
 
 /// Get configuration from standard configuration directory:
-/// 
-/// * Linux: /home/alice/.config/slack-status
-/// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status
-/// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config
-fn get_config() -> Option<Config> {
+///
+/// * Linux: /home/alice/.config/slack-status/config.toml
+/// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml
+/// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml
+fn get_config_dir() -> Option<std::path::PathBuf> {
     if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
-        let config_dir = proj_dirs.config_dir();
+        Some(proj_dirs.config_dir().to_path_buf())
+    } else {
+        None
+    }
+}
+
+fn get_config() -> Option<Config> {
+    if let Some(config_dir) = get_config_dir() {
         info!("Looking for configuration file in: {:?}", config_dir);
 
         let config_file_path = config_dir.join("config.toml");
 
-        let mut f = File::open(config_file_path).expect("file not found");
+        match File::open(config_file_path) {
+            Ok(mut f) => {
+                let mut contents = String::new();
+                f.read_to_string(&mut contents)
+                    .expect("something went wrong reading the file");
 
-        let mut contents = String::new();
-        f.read_to_string(&mut contents)
-            .expect("something went wrong reading the file");
+                let config = toml::from_str(contents.as_str()).unwrap();
 
-        let config = toml::from_str(contents.as_str()).unwrap();
-
-        Some(config)
+                Some(config)
+            }
+            Err(e) => {
+                warn!("Cannot find configuration file: {}.", e);
+                None
+            }
+        }
     } else {
-        panic!("Cannot find configuration directory.");
+        warn!("Cannot find configuration directory.");
+        None
     }
 }
 
+fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result<()> {
+    info!("Create sample config.toml at: {:?}", config_dir);
+
+    let sample = include_str!("config.toml.sample");
+
+    std::fs::create_dir_all(config_dir)?;
+    let mut f = File::create(config_dir.join("config.toml"))?;
+    f.write_all(sample.as_bytes())?;
+
+    f.sync_all()?;
+    Ok(())
+}
+
+/// Get status from configuration locations and current public IP.
 fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Status> {
     for location in locations {
         if location.ip == *ip {
             info!("{} => {}", location.ip, location.text);
-            return Some(
-                Status {
-                    text: location.text.clone(),
-                    emoji: location.emoji.clone(),
-                }
-            );
+            return Some(Status {
+                text: location.text.clone(),
+                emoji: location.emoji.clone(),
+            });
         }
     }
 
     None
 }
 
+/// Get status from configuration locations and IP, or defaults.
 fn get_status_from(config: Config, ip: &IpAddr) -> Status {
     match get_status_from_location(&config.locations, ip) {
         Some(status) => status,
-        None => config.defaults.unwrap_or(
-            Status {
-                text: "on the move".to_string(),
-                emoji: ":mountain_railway:".to_string(),
-            }
-        )
+        None => config.defaults.unwrap_or(Status {
+            text: "on the move".to_string(),
+            emoji: ":mountain_railway:".to_string(),
+        }),
     }
 }
 
 fn main() {
     env_logger::init();
 
+    debug!("Reading configuration...");
     let config = match get_config() {
         Some(config) => config,
-        None => panic!("Can't find configuration file."),
+        None => {
+            println!("Configuration file not found!");
+            let config_dir = get_config_dir().unwrap();
+            create_default_config(&config_dir).unwrap();
+            println!("Sample configuration file created in {:?}, please edit and add your legacy Slack token.", config_dir);
+            std::process::exit(1);
+        }
     };
 
-    let token = config.token.clone();
+    debug!("Checking Slack legacy token is not empty...");
+    let token = if config.token != "" {
+        config.token.clone()
+    } else {
+        println!("You must copy your Slack legacy token to configuration file.");
+        std::process::exit(1);
+    };
 
     info!("Requesting public ip...");
     let ip: ::std::net::IpAddr = match my_internet_ip::get() {
@@ -106,8 +144,10 @@ fn main() {
         Err(e) => panic!("Could not get public IP: {:#?}", e),
     };
 
+    info!("Computing status...");
     let status = get_status_from(config, &ip);
 
+    info!("Updating Slack status...");
     let client = reqwest::Client::new();
     let res: reqwest::Response = match client
         .post("https://slack.com/api/users.profile.set")

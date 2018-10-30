@@ -1,0 +1,15 @@
+token = ""
+
+[defaults]
+text = "on the move"
+emoji = ":mountain_railway:"
+
+[[locations]]
+ip = "123.45.56.78"
+text = "Home"
+emoji = ":house:"
+
+[[locations]]
+ip = "98.76.54.32"
+text = "Office"
+emoji = ":office:"
