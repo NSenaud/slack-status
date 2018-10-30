@@ -1,9 +1,7 @@
 [Unit]
 Description=Update Slack status with current location
-After=network.target
 
 [Service]
-User=nsd
 Environment=RUST_LOG=slack_status=info
 ExecStart=/usr/local/bin/slack-status
 
