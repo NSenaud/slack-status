@@ -2,7 +2,6 @@
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
 extern crate serde_json;
 extern crate directories;
 extern crate env_logger;
@@ -17,23 +16,23 @@ use std::net::IpAddr;
 use directories::ProjectDirs;
 
 #[derive(Deserialize, Clone)]
-struct Status {
-    text: String,
-    emoji: String,
+pub struct Status {
+    pub text: String,
+    pub emoji: String,
 }
 
 #[derive(Deserialize)]
-struct Location {
-    ip: IpAddr,
-    text: String,
-    emoji: String,
+pub struct Location {
+    pub ip: IpAddr,
+    pub text: String,
+    pub emoji: String,
 }
 
 #[derive(Deserialize)]
-struct Config {
-    token: String,
-    defaults: Option<Status>,
-    locations: Vec<Location>,
+pub struct Config {
+    pub token: String,
+    pub defaults: Option<Status>,
+    pub locations: Vec<Location>,
 }
 
 /// Get configuration from standard configuration directory:
@@ -41,7 +40,7 @@ struct Config {
 /// * Linux: /home/alice/.config/slack-status/config.toml
 /// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml
 /// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml
-fn get_config_dir() -> Option<std::path::PathBuf> {
+pub fn get_config_dir() -> Option<std::path::PathBuf> {
     if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
         Some(proj_dirs.config_dir().to_path_buf())
     } else {
@@ -49,7 +48,7 @@ fn get_config_dir() -> Option<std::path::PathBuf> {
     }
 }
 
-fn get_config() -> Option<Config> {
+pub fn get_config() -> Option<Config> {
     if let Some(config_dir) = get_config_dir() {
         info!("Looking for configuration file in: {:?}", config_dir);
 
@@ -76,7 +75,7 @@ fn get_config() -> Option<Config> {
     }
 }
 
-fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result<()> {
+pub fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result<()> {
     info!("Create sample config.toml at: {:?}", config_dir);
 
     let sample = include_str!("config.toml.sample");
@@ -90,7 +89,7 @@ fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result<()>
 }
 
 /// Get status from configuration locations and current public IP.
-fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Status> {
+pub fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Status> {
     for location in locations {
         if location.ip == *ip {
             info!("{} => {}", location.ip, location.text);
@@ -105,7 +104,7 @@ fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Statu
 }
 
 /// Get status from configuration locations and IP, or defaults.
-fn get_status_from(config: Config, ip: &IpAddr) -> Status {
+pub fn get_status_from(config: Config, ip: &IpAddr) -> Status {
     match get_status_from_location(&config.locations, ip) {
         Some(status) => status,
         None => config.defaults.unwrap_or(Status {
@@ -113,56 +112,4 @@ fn get_status_from(config: Config, ip: &IpAddr) -> Status {
             emoji: ":mountain_railway:".to_string(),
         }),
     }
-}
-
-fn main() {
-    env_logger::init();
-
-    debug!("Reading configuration...");
-    let config = match get_config() {
-        Some(config) => config,
-        None => {
-            println!("Configuration file not found!");
-            let config_dir = get_config_dir().unwrap();
-            create_default_config(&config_dir).unwrap();
-            println!("Sample configuration file created in {:?}, please edit and add your legacy Slack token.", config_dir);
-            std::process::exit(1);
-        }
-    };
-
-    debug!("Checking Slack legacy token is not empty...");
-    let token = if config.token != "" {
-        config.token.clone()
-    } else {
-        println!("You must copy your Slack legacy token to configuration file.");
-        std::process::exit(1);
-    };
-
-    info!("Requesting public ip...");
-    let ip: ::std::net::IpAddr = match my_internet_ip::get() {
-        Ok(ip) => ip,
-        Err(e) => panic!("Could not get public IP: {:#?}", e),
-    };
-
-    info!("Computing status...");
-    let status = get_status_from(config, &ip);
-
-    info!("Updating Slack status...");
-    let client = reqwest::Client::new();
-    let res: reqwest::Response = match client
-        .post("https://slack.com/api/users.profile.set")
-        .bearer_auth(token)
-        .json(&json!({
-                "profile": {
-                    "status_text": status.text,
-                    "status_emoji": status.emoji,
-                    "status_expiration": 0
-                }
-            })).send()
-    {
-        Ok(res) => res,
-        Err(e) => panic!("Failed to change status: {:?}", e),
-    };
-
-    debug!("{:#?}", res);
 }
