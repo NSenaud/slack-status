@@ -1,19 +1,30 @@
 #[macro_use]
+extern crate clap;
+#[macro_use]
 extern crate log;
-extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
-extern crate directories;
-extern crate env_logger;
-extern crate my_internet_ip;
-extern crate reqwest;
-extern crate toml;
-extern crate slack_status;
+
+use clap::App;
 
 use slack_status::*;
 
 fn main() {
-    env_logger::init();
+    let yaml = load_yaml!("cli.yaml");
+    let matches = App::from_yaml(yaml).get_matches();
+
+    let log_level = match matches.occurrences_of("verbose") {
+        0 => log::LevelFilter::Error,
+        1 => log::LevelFilter::Warn,
+        2 => log::LevelFilter::Info,
+        3 | _ => log::LevelFilter::Debug,
+    };
+    
+    println!("{}", log_level);
+    match setup_logger(log_level) {
+        Ok(_) => debug!("Logger set up"),
+        Err(e) => println!("Failed to setup logger: {}", e),
+    };
 
     debug!("Reading configuration...");
     let config = match get_config() {
@@ -40,9 +51,11 @@ fn main() {
         Ok(ip) => ip,
         Err(e) => panic!("Could not get public IP: {:#?}", e),
     };
+    info!("Public IP is: {}", ip);
 
     info!("Computing status...");
     let status = get_status_from(config, &ip);
+    info!("Status is: {} {}", status.emoji, status.text);
 
     info!("Updating Slack status...");
     let client = reqwest::Client::new();
@@ -62,4 +75,21 @@ fn main() {
     };
 
     debug!("{:#?}", res);
+}
+
+fn setup_logger(log_level: log::LevelFilter) -> Result<(), fern::InitError> {
+    fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .level(log_level)
+        .chain(std::io::stdout())
+        .apply()?;
+    Ok(())
 }

@@ -2,12 +2,6 @@
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-extern crate directories;
-extern crate env_logger;
-extern crate my_internet_ip;
-extern crate reqwest;
-extern crate toml;
 
 use std::fs::File;
 use std::io::prelude::*;

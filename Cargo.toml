@@ -1,15 +1,18 @@
 [package]
 name = "slack-status"
-version = "0.1.0"
-authors = ["Nicolas Senaud <nicolas@senaud.fr>"]
+version = "0.2.0"
+authors = ["Nicolas Senaud <nsd@nsd.io>"]
+edition = "2018"
 
 [dependencies]
-directories = "1.0.2"
-env_logger = "0.5.13"
-log = "0.4.5"
+chrono = "0.4.10"
+clap = {version = "2.33", features = ["yaml"]}
+directories = "2.0.2"
+fern = "0.5.9"
+log = "0.4.8"
 my_internet_ip = "0.1.1"
-reqwest = "0.9.3"
-serde = "1.0.80"
-serde_derive = "1.0.80"
-serde_json = "1.0.32"
-toml = "0.4.8"
+reqwest = "0.9.24"
+serde = "1.0.103"
+serde_derive = "1.0.103"
+serde_json = "1.0.44"
+toml = "0.5.5"

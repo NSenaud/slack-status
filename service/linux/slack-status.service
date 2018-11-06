@@ -2,8 +2,8 @@
 Description=Update Slack status with current location
 
 [Service]
-Environment=RUST_LOG=slack_status=info
-ExecStart=/usr/local/bin/slack-status
+User=alice
+ExecStart=/usr/local/bin/slack-status -vv
 
 [Install]
 WantedBy=timers.target
