@@ -2,11 +2,14 @@
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate serde_json;
 
 use std::fs::File;
 use std::io::prelude::*;
 use std::net::IpAddr;
 
+use chrono::prelude::*;
 use directories::ProjectDirs;
 
 #[derive(Deserialize, Clone)]
@@ -106,4 +109,20 @@ pub fn get_status_from(config: Config, ip: &IpAddr) -> Status {
             emoji: ":mountain_railway:".to_string(),
         }),
     }
+}
+
+pub fn set_slack_status(status: Status, token: String) -> Result<reqwest::Response, reqwest::Error> {
+    info!("Updating Slack status...");
+    let client = reqwest::Client::new();
+    client.post("https://slack.com/api/users.profile.set")
+        .bearer_auth(token)
+        .json(&json!({
+                "profile": {
+                    "status_text": status.text,
+                    "status_emoji": status.emoji,
+                    "status_expiration": Utc::now().timestamp() + 3600,
+                }
+            }))
+    .send()
+
 }

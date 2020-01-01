@@ -2,8 +2,6 @@
 extern crate clap;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate serde_json;
 
 use clap::App;
 
@@ -58,17 +56,7 @@ fn main() {
     info!("Status is: {} {}", status.emoji, status.text);
 
     info!("Updating Slack status...");
-    let client = reqwest::Client::new();
-    let res: reqwest::Response = match client
-        .post("https://slack.com/api/users.profile.set")
-        .bearer_auth(token)
-        .json(&json!({
-                "profile": {
-                    "status_text": status.text,
-                    "status_emoji": status.emoji,
-                    "status_expiration": 0
-                }
-            })).send()
+    let res: reqwest::Response = match set_slack_status(status, token)
     {
         Ok(res) => res,
         Err(e) => panic!("Failed to change status: {:?}", e),
