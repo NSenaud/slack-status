@@ -4,13 +4,19 @@ extern crate log;
 extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate simple_error;
 
 use std::fs::File;
+use std::error::Error;
 use std::io::prelude::*;
 use std::net::IpAddr;
+use std::str::FromStr;
 
 use chrono::prelude::*;
 use directories::ProjectDirs;
+
+type BoxResult<T> = Result<T,Box<dyn Error>>;
 
 #[derive(Deserialize, Clone)]
 pub struct Status {
@@ -20,7 +26,7 @@ pub struct Status {
 
 #[derive(Deserialize)]
 pub struct Location {
-    pub ip: IpAddr,
+    pub ip_addresses: Vec<IpAddr>,
     pub text: String,
     pub emoji: String,
 }
@@ -87,17 +93,25 @@ pub fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result
 
 /// Get status from configuration locations and current public IP.
 pub fn get_status_from_location(locations: &[Location], ip: &IpAddr) -> Option<Status> {
-    for location in locations {
-        if location.ip == *ip {
-            info!("{} => {}", location.ip, location.text);
-            return Some(Status {
-                text: location.text.clone(),
-                emoji: location.emoji.clone(),
-            });
-        }
-    }
+    let statuses: Vec<&Location> = locations.iter()
+        .filter(|l| l.ip_addresses.iter()
+            .any(|i| i == ip))
+        .collect();
 
-    None
+    match statuses.len() {
+        0 => None,
+        1 => {
+            info!("{} => {}", ip, statuses[0].text);
+            Some(Status {
+                text: statuses[0].text.clone(),
+                emoji: statuses[0].emoji.clone(),
+            })
+        },
+        _ => {
+            error!("Configuration error: several locations match your IP!");
+            None
+        },
+    }
 }
 
 /// Get status from configuration locations and IP, or defaults.
@@ -112,7 +126,7 @@ pub fn get_status_from(config: Config, ip: &IpAddr) -> Status {
 }
 
 pub fn set_slack_status(status: Status, token: String) -> Result<reqwest::Response, reqwest::Error> {
-    info!("Updating Slack status...");
+    debug!("Updating Slack status...");
     let client = reqwest::Client::new();
     client.post("https://slack.com/api/users.profile.set")
         .bearer_auth(token)
@@ -124,5 +138,23 @@ pub fn set_slack_status(status: Status, token: String) -> Result<reqwest::Respon
                 }
             }))
     .send()
+}
 
+pub fn get_public_ip() -> BoxResult<IpAddr> {
+    debug!("Requesting public ip to ip.clara.net...");
+    let client = reqwest::Client::new();
+
+    let mut resp = match client.get("https://ip.clara.net").send() {
+        Ok(r) => r,
+        Err(e) => bail!(format!("Request error: {}", e)),
+    };
+
+    if resp.status().is_success() {
+        return match IpAddr::from_str(&resp.text().unwrap()) {
+            Ok(ip) => Ok::<IpAddr, Box<dyn Error>>(ip),
+            Err(e) => bail!(format!("Cannot parse IP: {}", e)),
+        }
+    }
+
+    bail!(format!("Request error, status is: {}", resp.status()))
 }

@@ -17,7 +17,7 @@ fn main() {
         2 => log::LevelFilter::Info,
         3 | _ => log::LevelFilter::Debug,
     };
-    
+
     println!("{}", log_level);
     match setup_logger(log_level) {
         Ok(_) => debug!("Logger set up"),
@@ -45,9 +45,12 @@ fn main() {
     };
 
     info!("Requesting public ip...");
-    let ip: ::std::net::IpAddr = match my_internet_ip::get() {
+    let ip = match get_public_ip() {
         Ok(ip) => ip,
-        Err(e) => panic!("Could not get public IP: {:#?}", e),
+        Err(e) => {
+            error!("Cannot parse IP: {}", e);
+            return;
+        },
     };
     info!("Public IP is: {}", ip);
 

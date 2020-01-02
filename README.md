@@ -13,8 +13,10 @@ Features
 --------
 
 - [X] Set Slack status depending on your current public IP (v4)
-- [ ] Use Slack's "clear after" option
+- [X] Status expires after one hour
 - [ ] Option to set "on-call" status from PagerDuty
+- [ ] Option to customize status expiration delay
+- [ ] Custom address to request public IP address
 - [ ] Managing locations frow CLI
 - [ ] Option to use SSID instead of public IP to detect location
 - [ ] Option to use OS location APIs?
