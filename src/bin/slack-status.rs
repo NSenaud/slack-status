@@ -46,7 +46,7 @@ fn main() {
     };
 
     info!("Requesting public ip...");
-    let ip = match get_public_ip() {
+    let ip = match client.get_public_ip() {
         Ok(ip) => ip,
         Err(e) => {
             error!("Cannot parse IP: {}", e);
@@ -60,8 +60,7 @@ fn main() {
     info!("Status is: {} {}", status.emoji, status.text);
 
     info!("Updating Slack status...");
-    let res: reqwest::Response = match client.set_slack_status(status)
-    {
+    let res: reqwest::Response = match client.set_slack_status(status) {
         Ok(res) => res,
         Err(e) => panic!("Failed to change status: {:?}", e),
     };

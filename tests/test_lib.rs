@@ -10,6 +10,7 @@ mod tests {
         let client = SlackStatus::from(Config {
             token: String::from_str("xxx").unwrap(),
             defaults: None,
+            ip_request_address: None,
             locations: Vec::new(),
         }).unwrap();
 
@@ -23,6 +24,7 @@ mod tests {
         let client = SlackStatus::from(Config {
             token: String::from_str("xxx").unwrap(),
             defaults: None,
+            ip_request_address: None,
             locations: vec![
                 Location {
                     ip_addresses: vec![IpAddr::from_str("123.45.67.89").unwrap()],
@@ -42,6 +44,7 @@ mod tests {
         let client = SlackStatus::from(Config {
             token: String::from_str("xxx").unwrap(),
             defaults: None,
+            ip_request_address: None,
             locations: vec![
                 Location {
                     ip_addresses: vec![IpAddr::from_str("123.45.67.89").unwrap()],
@@ -66,6 +69,7 @@ mod tests {
         let client = SlackStatus::from(Config {
             token: String::from_str("xxx").unwrap(),
             defaults: None,
+            ip_request_address: None,
             locations: vec![
                 Location {
                     ip_addresses: vec![
@@ -93,6 +97,7 @@ mod tests {
         let client = SlackStatus::from(Config {
             token: String::from_str("xxx").unwrap(),
             defaults: None,
+            ip_request_address: None,
             locations: vec![
                 Location {
                     ip_addresses: vec![

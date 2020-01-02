@@ -34,6 +34,7 @@ pub struct Location {
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub token: String,
+    pub ip_request_address: Option<String>,
     pub defaults: Option<Status>,
     pub locations: Vec<Location>,
 }
@@ -130,6 +131,29 @@ impl SlackStatus {
             },
         }
     }
+
+    pub fn get_public_ip(&self) -> BoxResult<IpAddr> {
+        let url = match &self.config.ip_request_address {
+            Some(u) => u.clone(),
+            None => "https://ip.clara.net".to_string(),
+        };
+        
+        debug!("Requesting public ip to {}...", url);
+
+        let mut resp = match self.client.get(url.as_str()).send() {
+            Ok(r) => r,
+            Err(e) => bail!(format!("Request error: {}", e)),
+        };
+
+        if resp.status().is_success() {
+            return match IpAddr::from_str(&resp.text().unwrap()) {
+                Ok(ip) => Ok::<IpAddr, Box<dyn Error>>(ip),
+                Err(e) => bail!(format!("Cannot parse IP: {}", e)),
+            }
+        }
+
+        bail!(format!("Request error, status is: {}", resp.status()))
+    }
 }
 
 
@@ -157,23 +181,4 @@ pub fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result
 
     f.sync_all()?;
     Ok(())
-}
-
-pub fn get_public_ip() -> BoxResult<IpAddr> {
-    debug!("Requesting public ip to ip.clara.net...");
-    let client = reqwest::Client::new();
-
-    let mut resp = match client.get("https://ip.clara.net").send() {
-        Ok(r) => r,
-        Err(e) => bail!(format!("Request error: {}", e)),
-    };
-
-    if resp.status().is_success() {
-        return match IpAddr::from_str(&resp.text().unwrap()) {
-            Ok(ip) => Ok::<IpAddr, Box<dyn Error>>(ip),
-            Err(e) => bail!(format!("Cannot parse IP: {}", e)),
-        }
-    }
-
-    bail!(format!("Request error, status is: {}", resp.status()))
 }

@@ -1,4 +1,5 @@
 token = ""
+ip_request_address = "https://ip.clara.net"
 
 [defaults]
 text = "on the move"
