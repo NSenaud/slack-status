@@ -25,23 +25,24 @@ fn main() {
     };
 
     debug!("Reading configuration...");
-    let config = match get_config() {
+    let config = match Config::read() {
         Some(config) => config,
         None => {
             println!("Configuration file not found!");
             let config_dir = get_config_dir().unwrap();
             create_default_config(&config_dir).unwrap();
-            println!("Sample configuration file created in {:?}, please edit and add your legacy Slack token.", config_dir);
+            println!("Sample configuration file created at: {:?}", config_dir);
+            println!("Please edit and add your legacy Slack token.");
             std::process::exit(1);
         }
     };
 
-    debug!("Checking Slack legacy token is not empty...");
-    let token = if config.token != "" {
-        config.token.clone()
-    } else {
-        println!("You must copy your Slack legacy token to configuration file.");
-        std::process::exit(1);
+    let client = match SlackStatus::from(config) {
+        Ok(c) => c,
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(1);
+        }
     };
 
     info!("Requesting public ip...");
@@ -55,11 +56,11 @@ fn main() {
     info!("Public IP is: {}", ip);
 
     info!("Computing status...");
-    let status = get_status_from(config, &ip);
+    let status = client.status_from(&ip);
     info!("Status is: {} {}", status.emoji, status.text);
 
     info!("Updating Slack status...");
-    let res: reqwest::Response = match set_slack_status(status, token)
+    let res: reqwest::Response = match client.set_slack_status(status)
     {
         Ok(res) => res,
         Err(e) => panic!("Failed to change status: {:?}", e),
