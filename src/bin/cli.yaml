@@ -9,7 +9,33 @@ args:
         value_name: FILE
         help: Sets a custom config file
         takes_value: true
+    - noninteractive:
+        short: n
+        long: non-interactive
+        help: Non-interactive mode (useful for scripts and services)
+        takes_value: false
     - verbose:
         short: v
         multiple: true
         help: Sets the level of verbosity
+subcommands:
+    - location:
+        about: Manage locations settings
+        subcommands:
+            - list:
+                about: List saved locations
+            - add:
+                about: Add current location
+                takes_value: false
+            - rm:
+                about: Remove location
+                takes_value: false
+    - status:
+        about: Manage your current status
+        subcommands:
+            - get:
+                about: Get your current status
+                takes_value: false
+            - set:
+                about: Set your current status
+                takes_value: false

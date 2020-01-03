@@ -3,7 +3,7 @@ Description=Hourly update Slack status with current location
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=1h
+OnUnitActiveSec=10min
 
 [Install]
 WantedBy=timers.target

@@ -9,88 +9,144 @@ extern crate simple_error;
 
 use std::fs::File;
 use std::error::Error;
+use std::fmt;
 use std::io::prelude::*;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use chrono::prelude::*;
+use chrono::Duration;
 use directories::ProjectDirs;
+use reqwest::blocking::*;
 
-type BoxResult<T> = Result<T,Box<dyn Error>>;
+pub type BoxResult<T> = Result<T,Box<dyn Error>>;
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Status {
     pub text: String,
     pub emoji: String,
+    pub expire_after_hours: Option<i64>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Location {
-    pub ip_addresses: Vec<IpAddr>,
+    pub ip: IpAddr,
     pub text: String,
     pub emoji: String,
+    pub expire_after_hours: Option<i64>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub token: String,
     pub ip_request_address: Option<String>,
-    pub defaults: Option<Status>,
     pub locations: Vec<Location>,
+    pub defaults: Option<Status>,
 }
 
-pub struct SlackStatus {
-    client: reqwest::Client,
-    config: Config,
+pub struct SlackStatus<'a> {
+    client: Client,
+    pub config: &'a Config,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.emoji, self.text)
+    }
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} => {} {}", self.ip, self.emoji, self.text)
+    }
 }
 
 impl Config {
-    pub fn read(path: Option<&str>) -> Option<Config> {
-        let config_file_path;
-
+    fn get_file_path(path: Option<&str>) -> Option<PathBuf> {
         if let Some(path) = path {
-            config_file_path = PathBuf::from(path)
+            debug!("Looking for configuration file in: {:?}", path);
+            Some(PathBuf::from(path))
         } else if let Some(config_dir) = get_config_dir() {
-            info!("Looking for configuration file in: {:?}", config_dir);
-
-            config_file_path = config_dir.join("config.toml");
+            debug!("Looking for configuration file in: {:?}", config_dir);
+            Some(config_dir.join("config.toml"))
         } else {
             warn!("Cannot find configuration directory.");
-            return None
+            None
         }
+    }
 
-        match File::open(config_file_path) {
-            Ok(mut f) => {
-                let mut contents = String::new();
-                f.read_to_string(&mut contents)
-                    .expect("something went wrong reading the file");
+    pub fn read(path: Option<&str>) -> BoxResult<Option<Config>> {
+        if let Some(config_file_path) = Config::get_file_path(path) {
+            match File::open(config_file_path) {
+                Ok(mut f) => {
+                    let mut contents = String::new();
+                    f.read_to_string(&mut contents)
+                        .expect("something went wrong reading the file");
 
-                let config = toml::from_str(contents.as_str()).unwrap();
+                    let config = match toml::from_str(contents.as_str()) {
+                        Ok(c) => c,
+                        Err(e) => bail!("Deserialization error: {}", e),
+                    };
 
-                Some(config)
+                    Ok(Some(config))
+                }
+                Err(e) => {
+                    warn!("Cannot open configuration file at: {}.", e);
+                    Ok(None)
+                }
             }
-            Err(e) => {
-                warn!("Cannot find configuration file: {}.", e);
-                None
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save(&self, path: Option<&str>) -> BoxResult<()> {
+        if let Some(config_file_path) = Config::get_file_path(path) {
+            match File::create(config_file_path) {
+                Ok(mut f) => {
+                    let config = match toml::to_string_pretty(self) {
+                        Ok(c) => c,
+                        Err(e) => bail!("Serialization error: {}", e),
+                    };
+                    match f.write_all(config.as_bytes()) {
+                        Ok(_) => {
+                            info!("Configuration file saved");
+                            Ok(())
+                        },
+                        Err(e) => bail!(e),
+                    }
+                }
+                Err(e) => {
+                    bail!("Cannot open configuration file at: {}.", e);
+                }
             }
+        } else {
+            bail!("Cannot find configuration file.");
         }
     }
 }
 
-impl SlackStatus {
-    pub fn from(config: Config) -> BoxResult<SlackStatus> {
+impl<'a> SlackStatus<'a> {
+    pub fn from(config: &'a Config) -> BoxResult<SlackStatus> {
         if config.token.is_empty() {
             bail!("You must copy your Slack legacy token to configuration file.");
         };
 
         Ok(SlackStatus {
-            client: reqwest::Client::new(),
+            client: Client::new(),
             config: config,
         })
     }
 
-    pub fn set_slack_status(&self, status: Status) -> Result<reqwest::Response, reqwest::Error> {
+    pub fn get_slack_status(&self) -> Result<reqwest::blocking::Response, reqwest::Error> {
+        debug!("Requesting Slack status...");
+        self.client.get("https://slack.com/api/users.profile.get")
+            .bearer_auth(&self.config.token)
+            .send()
+    }
+
+    pub fn set_slack_status(&self, status: Status) -> Result<reqwest::blocking::Response, reqwest::Error> {
         debug!("Updating Slack status...");
         self.client.post("https://slack.com/api/users.profile.set")
             .bearer_auth(&self.config.token)
@@ -98,10 +154,11 @@ impl SlackStatus {
                     "profile": {
                         "status_text": status.text,
                         "status_emoji": status.emoji,
-                        "status_expiration": Utc::now().timestamp() + 3600,
+                        "status_expiration": Utc::now().timestamp() +
+                            Duration::hours(status.expire_after_hours.unwrap_or(1)).num_seconds(),
                     }
                 }))
-        .send()
+            .send()
     }
 
     pub fn status_from(&self, ip: &IpAddr) -> Status {
@@ -110,6 +167,7 @@ impl SlackStatus {
             None => self.config.defaults.clone().unwrap_or(Status {
                 text: "on the move".to_string(),
                 emoji: ":mountain_railway:".to_string(),
+                expire_after_hours: None,
             }),
         }
     }
@@ -117,17 +175,17 @@ impl SlackStatus {
     /// Get status from configuration locations and current public IP.
     pub fn status_from_location(&self, ip: &IpAddr) -> Option<Status> {
         let statuses: Vec<&Location> = self.config.locations.iter()
-            .filter(|l| l.ip_addresses.iter()
-                .any(|i| i == ip))
+            .filter(|l| l.ip == *ip)
             .collect();
 
         match statuses.len() {
             0 => None,
             1 => {
-                info!("{} => {}", ip, statuses[0].text);
+                debug!("{} => {}", ip, statuses[0].text);
                 Some(Status {
                     text: statuses[0].text.clone(),
                     emoji: statuses[0].emoji.clone(),
+                    expire_after_hours: None,
                 })
             },
             _ => {
@@ -145,7 +203,7 @@ impl SlackStatus {
 
         debug!("Requesting public ip to {}...", url);
 
-        let mut resp = match self.client.get(url.as_str()).send() {
+        let resp = match self.client.get(url.as_str()).send() {
             Ok(r) => r,
             Err(e) => bail!(format!("Request error: {}", e)),
         };
@@ -173,17 +231,4 @@ pub fn get_config_dir() -> Option<std::path::PathBuf> {
     } else {
         None
     }
-}
-
-pub fn create_default_config(config_dir: &std::path::PathBuf) -> std::io::Result<()> {
-    info!("Create sample config.toml at: {:?}", config_dir);
-
-    let sample = include_str!("config.toml.sample");
-
-    std::fs::create_dir_all(config_dir)?;
-    let mut f = File::create(config_dir.join("config.toml"))?;
-    f.write_all(sample.as_bytes())?;
-
-    f.sync_all()?;
-    Ok(())
 }

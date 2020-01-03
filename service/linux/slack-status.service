@@ -3,7 +3,7 @@ Description=Update Slack status with current location
 
 [Service]
 User=alice
-ExecStart=/usr/local/bin/slack-status -vv
+ExecStart=/usr/local/bin/slack-status -vv -n
 
 [Install]
 WantedBy=timers.target
