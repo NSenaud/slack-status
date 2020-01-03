@@ -18,14 +18,13 @@ fn main() {
         3 | _ => log::LevelFilter::Debug,
     };
 
-    println!("{}", log_level);
     match setup_logger(log_level) {
         Ok(_) => debug!("Logger set up"),
         Err(e) => println!("Failed to setup logger: {}", e),
     };
 
     debug!("Reading configuration...");
-    let config = match Config::read() {
+    let config = match Config::read(matches.value_of("config")) {
         Some(config) => config,
         None => {
             println!("Configuration file not found!");

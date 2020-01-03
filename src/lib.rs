@@ -11,6 +11,7 @@ use std::fs::File;
 use std::error::Error;
 use std::io::prelude::*;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use chrono::prelude::*;
@@ -45,30 +46,34 @@ pub struct SlackStatus {
 }
 
 impl Config {
-    pub fn read() -> Option<Config> {
-        if let Some(config_dir) = get_config_dir() {
+    pub fn read(path: Option<&str>) -> Option<Config> {
+        let config_file_path;
+
+        if let Some(path) = path {
+            config_file_path = PathBuf::from(path)
+        } else if let Some(config_dir) = get_config_dir() {
             info!("Looking for configuration file in: {:?}", config_dir);
 
-            let config_file_path = config_dir.join("config.toml");
-
-            match File::open(config_file_path) {
-                Ok(mut f) => {
-                    let mut contents = String::new();
-                    f.read_to_string(&mut contents)
-                        .expect("something went wrong reading the file");
-
-                    let config = toml::from_str(contents.as_str()).unwrap();
-
-                    Some(config)
-                }
-                Err(e) => {
-                    warn!("Cannot find configuration file: {}.", e);
-                    None
-                }
-            }
+            config_file_path = config_dir.join("config.toml");
         } else {
             warn!("Cannot find configuration directory.");
-            None
+            return None
+        }
+
+        match File::open(config_file_path) {
+            Ok(mut f) => {
+                let mut contents = String::new();
+                f.read_to_string(&mut contents)
+                    .expect("something went wrong reading the file");
+
+                let config = toml::from_str(contents.as_str()).unwrap();
+
+                Some(config)
+            }
+            Err(e) => {
+                warn!("Cannot find configuration file: {}.", e);
+                None
+            }
         }
     }
 }
@@ -137,7 +142,7 @@ impl SlackStatus {
             Some(u) => u.clone(),
             None => "https://ip.clara.net".to_string(),
         };
-        
+
         debug!("Requesting public ip to {}...", url);
 
         let mut resp = match self.client.get(url.as_str()).send() {

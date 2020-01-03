@@ -1,5 +1,5 @@
 name: slack-status
-version: "0.2.0"
+version: "0.3.0"
 author: Nicolas Senaud <nsd@nsd.io>
 about: Update your Slack status according to your current location
 args:
@@ -13,47 +13,3 @@ args:
         short: v
         multiple: true
         help: Sets the level of verbosity
-subcommands:
-    - get:
-        about: Get your current Slack status
-    - set:
-        about: Sets your current Slack status
-        args:
-            - emoji:
-                short: e
-                long: emoji
-                value_name: INPUT
-                help: Sets a custom emoji
-                takes_value: true
-            - text:
-                short: t
-                long: text
-                value_name: INPUT
-                help: Sets a custom text
-                takes_value: true
-    - location:
-        about: Manage locations settings
-        subcommands:
-            - list:
-                about: List saved locations
-            - add:
-                about: Add location
-                value_name: INPUT
-                takes_value: true
-                args:
-                    - ssid:
-                        short: s
-                        long: ssid
-                        value_name: INPUT
-                        help: Sets location's SSID
-                        takes_value: true
-                    - ip:
-                        short: i
-                        long: ip
-                        value_name: INPUT
-                        help: Sets location's public IP
-                        takes_value: true
-            - del:
-                about: Delete location
-                value_name: INPUT
-                takes_value: true
