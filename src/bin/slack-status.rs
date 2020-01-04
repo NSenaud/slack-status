@@ -48,7 +48,7 @@ fn main() {
         },
     };
 
-    // Init SlackStatus client.
+    // Init SlackStatus client
     let client = match SlackStatus::from(&config) {
         Ok(c) => c,
         Err(e) => {
@@ -61,21 +61,24 @@ fn main() {
         add_location(&client, &config, matches.value_of("config"));
     }
 
-    // Arguments reading
+    // Subcommand reading
     if let Some(submatches) = matches.subcommand_matches("location") {
         if let Some(_) = submatches.subcommand_matches("list") {
+            // slack-status location list
             list_locations(&client);
         } else if let Some(_) = submatches.subcommand_matches("add") {
+            // slack-status location add
             add_location(&client, &config, matches.value_of("config"));
         } else if let Some(_) = submatches.subcommand_matches("rm") {
+            // slack-status location rm
             rm_location(&config, matches.value_of("config"));
-        } else {
-            App::from_yaml(yaml).help_message("Wrong parameter");
         }
     } else if let Some(submatches) = matches.subcommand_matches("status") {
         if let Some(_) = submatches.subcommand_matches("get") {
+            // slack-status status get
             get_status(&client);
         } else if let Some(_) = submatches.subcommand_matches("set") {
+            // slack-status status set
             set_status(&client);
         }
     } else {
@@ -85,8 +88,10 @@ fn main() {
     std::process::exit(0)
 }
 
+/// Launch configuration wizard.
 fn configuration_wizard(path: Option<&str>) -> BoxResult<Config> {
-    let minimal_config = match minimal_config_prompt() {
+    // Must not fail to continue
+    let minimal_config = match required_config_prompt() {
         Ok(c) => match c {
             Some(c) => c,
             None => std::process::exit(1),
@@ -94,7 +99,8 @@ fn configuration_wizard(path: Option<&str>) -> BoxResult<Config> {
         Err(_) => std::process::exit(1),
     };
 
-    let config = match config_defaults_prompt(&minimal_config) {
+    // Can fail to continue
+    let config = match optional_config_prompt(&minimal_config) {
         Ok(c) => c.unwrap_or(minimal_config),
         Err(_) => minimal_config,
     };
@@ -110,91 +116,42 @@ fn configuration_wizard(path: Option<&str>) -> BoxResult<Config> {
     Ok(config)
 }
 
-fn minimal_config_prompt() -> BoxResult<Option<Config>> {
-    let theme = ColorfulTheme {
-        values_style: Style::new().yellow().dim(),
-        indicator_style: Style::new().yellow().bold(),
-        yes_style: Style::new().yellow().dim(),
-        no_style: Style::new().yellow().dim(),
-        ..ColorfulTheme::default()
+/// Update Slack status based on current location..
+fn status_update(client: &SlackStatus, non_interactive: bool) {
+    debug!("Requesting public ip...");
+    let ip = match client.get_public_ip() {
+        Ok(ip) => ip,
+        Err(e) => {
+            error!("Cannot get public IP: {}", e);
+            std::process::exit(1);
+        },
     };
-    println!("Configuration not found!\n");
+    println!("Your current location's public IP is: {}", ip);
 
-    if !Confirmation::with_theme(&theme)
-        .with_text("Do you want to launch the setup wizard?")
-        .interact()?
+    debug!("Computing status...");
+    let status = client.status_from(&ip);
+    println!("Location's status is: {}", status);
+
+    // Ask for confirmation before updating status if not in non-interactive mode.
+    if non_interactive || Confirmation::new()
+        .with_text("Do you want to update your status?")
+        .interact()
+        .unwrap()
     {
-        return Ok(None);
+        debug!("Updating Slack status...");
+        let res: reqwest::blocking::Response = match client.set_slack_status(status) {
+            Ok(res) => res,
+            Err(e) => panic!("Failed to change status: {:?}", e),
+        };
+        println!("Your Slack status have been updated!");
+        debug!("{:#?}", res);
+    } else {
+        println!("Nevermind then :(");
+        return;
     }
-
-    let token = Input::with_theme(&theme)
-        .with_prompt("Slack App token")
-        .interact()?;
-
-    let ip_request_address = Input::with_theme(&theme)
-        .with_prompt("Where do you want to request your public IP address?")
-        .default("http://ip.clara.net".parse().unwrap())
-        .interact()?;
-
-    Ok(Some(Config {
-        token: token,
-        ip_request_address: Some(ip_request_address),
-        defaults: None,
-        locations: Vec::<Location>::new(),
-    }))
 }
 
-fn config_defaults_prompt(config: &Config) -> BoxResult<Option<Config>> {
-    let theme = ColorfulTheme {
-        values_style: Style::new().yellow().dim(),
-        indicator_style: Style::new().yellow().bold(),
-        yes_style: Style::new().yellow().dim(),
-        no_style: Style::new().yellow().dim(),
-        ..ColorfulTheme::default()
-    };
-    println!("Default status is used when your current location is unkown.");
-
-    if !Confirmation::with_theme(&theme)
-        .with_text("Do you want to customize the default status?")
-        .interact()?
-    {
-        return Ok(None);
-    }
-
-    let emoji = Input::with_theme(&theme)
-        .with_prompt("emoji")
-        .default(":mountain_railway:".parse().unwrap())
-        .interact()?;
-
-    let status = Input::with_theme(&theme)
-        .with_prompt("status")
-        .default("commuting".parse().unwrap())
-        .interact()?;
-
-    let expires = Select::with_theme(&theme)
-        .with_prompt("Status expires after")
-        .default(0)
-        .item("1 hour")
-        .item("1 day")
-        .item("never")
-        .interact()?;
-
-    Ok(Some(Config {
-        token: config.token.clone(),
-        ip_request_address: config.ip_request_address.clone(),
-        defaults: Some(Status {
-            text: status,
-            emoji: emoji,
-            expire_after_hours: match expires {
-                0 => Some(1),
-                1 => Some(24),
-                _ => None,
-            },
-        }),
-        locations: config.locations.clone(),
-    }))
-}
-
+/// Print the list of configured locations.
 fn list_locations(client: &SlackStatus) {
     debug!("Listing locations...");
     for location in client.config.locations.iter() {
@@ -202,6 +159,7 @@ fn list_locations(client: &SlackStatus) {
     }
 }
 
+/// Add (or replace) status for current location.
 fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&str>) {
     debug!("Adding current location...");
     debug!("Requesting public ip...");
@@ -237,53 +195,7 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
     };
 }
 
-fn add_location_prompt(ip: IpAddr) -> BoxResult<Option<Location>> {
-    let theme = ColorfulTheme {
-        values_style: Style::new().yellow().dim(),
-        indicator_style: Style::new().yellow().bold(),
-        yes_style: Style::new().yellow().dim(),
-        no_style: Style::new().yellow().dim(),
-        ..ColorfulTheme::default()
-    };
-    println!("Your current location's public IP is: {}\n", ip);
-
-    if !Confirmation::with_theme(&theme)
-        .with_text("Do you want add a status or overwrite an existing one for this location?")
-        .interact()?
-    {
-        return Ok(None);
-    }
-
-    let emoji = Input::with_theme(&theme)
-        .with_prompt("emoji")
-        .default(":house_with_garden:".parse().unwrap())
-        .interact()?;
-
-    let status = Input::with_theme(&theme)
-        .with_prompt("status")
-        .default("working remotely".parse().unwrap())
-        .interact()?;
-
-    let expires = Select::with_theme(&theme)
-        .with_prompt("Status expires after")
-        .default(0)
-        .item("1 hour")
-        .item("1 day")
-        .item("never")
-        .interact()?;
-
-    Ok(Some(Location {
-        ip: ip,
-        text: status,
-        emoji: emoji,
-        expire_after_hours: match expires {
-            0 => Some(1),
-            1 => Some(24),
-            _ => None,
-        },
-    }))
-}
-
+/// Remove some configured locations.
 fn rm_location(old_config: &Config, custom_path: Option<&str>) {
     debug!("Prompt for removing a saved location...");
 
@@ -331,44 +243,11 @@ fn rm_location(old_config: &Config, custom_path: Option<&str>) {
     }
 }
 
-fn status_update(client: &SlackStatus, non_interactive: bool) {
-    debug!("Requesting public ip...");
-    let ip = match client.get_public_ip() {
-        Ok(ip) => ip,
-        Err(e) => {
-            error!("Cannot get public IP: {}", e);
-            std::process::exit(1);
-        },
-    };
-    println!("Your current location's public IP is: {}", ip);
-
-    debug!("Computing status...");
-    let status = client.status_from(&ip);
-    println!("Location's status is: {}", status);
-
-    // Ask for confirmation before updating status if not in non-interactive mode.
-    if non_interactive || Confirmation::new()
-        .with_text("Do you want to update your status?")
-        .interact()
-        .unwrap()
-    {
-        debug!("Updating Slack status...");
-        let res: reqwest::blocking::Response = match client.set_slack_status(status) {
-            Ok(res) => res,
-            Err(e) => panic!("Failed to change status: {:?}", e),
-        };
-        println!("Your Slack status have been updated!");
-        debug!("{:#?}", res);
-    } else {
-        println!("Nevermind then :(");
-        return;
-    }
-}
-
+/// Manually set current Slack Status.
 fn set_status(client: &SlackStatus) {
     debug!("Manually set status...");
 
-    let status = match set_status_prompt() {
+    let status = match status_prompt(":house_with_garden:", "working remotely") {
         Ok(s) => match s {
             Some(s) => s,
             None => std::process::exit(1),
@@ -395,44 +274,7 @@ fn set_status(client: &SlackStatus) {
     }
 }
 
-fn set_status_prompt() -> BoxResult<Option<Status>> {
-    let theme = ColorfulTheme {
-        values_style: Style::new().yellow().dim(),
-        indicator_style: Style::new().yellow().bold(),
-        yes_style: Style::new().yellow().dim(),
-        no_style: Style::new().yellow().dim(),
-        ..ColorfulTheme::default()
-    };
-
-    let emoji = Input::with_theme(&theme)
-        .with_prompt("emoji")
-        .default(":house_with_garden:".parse().unwrap())
-        .interact()?;
-
-    let status = Input::with_theme(&theme)
-        .with_prompt("status")
-        .default("working remotely".parse().unwrap())
-        .interact()?;
-
-    let expires = Select::with_theme(&theme)
-        .with_prompt("Status expires after")
-        .default(0)
-        .item("1 hour")
-        .item("1 day")
-        .item("never")
-        .interact()?;
-
-    Ok(Some(Status {
-        text: status,
-        emoji: emoji,
-        expire_after_hours: match expires {
-            0 => Some(1),
-            1 => Some(24),
-            _ => None,
-        },
-    }))
-}
-
+/// Request current Slack status.
 fn get_status(client: &SlackStatus) {
     debug!("Requesting your current status...");
 
@@ -455,6 +297,153 @@ fn get_status(client: &SlackStatus) {
     debug!("{:#?}", status);
 }
 
+/// Prompt for required configuration elements.
+fn required_config_prompt() -> BoxResult<Option<Config>> {
+    let theme = ColorfulTheme {
+        values_style: Style::new().yellow().dim(),
+        indicator_style: Style::new().yellow().bold(),
+        yes_style: Style::new().yellow().dim(),
+        no_style: Style::new().yellow().dim(),
+        ..ColorfulTheme::default()
+    };
+    println!("Configuration not found!\n");
+
+    if !Confirmation::with_theme(&theme)
+        .with_text("Do you want to launch the setup wizard?")
+        .interact()?
+    {
+        return Ok(None);
+    }
+
+    let token = Input::with_theme(&theme)
+        .with_prompt("Slack App token")
+        .interact()?;
+
+    let ip_request_address = Input::with_theme(&theme)
+        .with_prompt("Where do you want to request your public IP address?")
+        .default("http://ip.clara.net".parse().unwrap())
+        .interact()?;
+
+    Ok(Some(Config {
+        token: token,
+        ip_request_address: Some(ip_request_address),
+        defaults: None,
+        locations: Vec::<Location>::new(),
+    }))
+}
+
+/// Prompt for optional configuration elements.
+fn optional_config_prompt(config: &Config) -> BoxResult<Option<Config>> {
+    let theme = ColorfulTheme {
+        values_style: Style::new().yellow().dim(),
+        indicator_style: Style::new().yellow().bold(),
+        yes_style: Style::new().yellow().dim(),
+        no_style: Style::new().yellow().dim(),
+        ..ColorfulTheme::default()
+    };
+    println!("Default status is used when your current location is unkown.");
+
+    if !Confirmation::with_theme(&theme)
+        .with_text("Do you want to customize the default status?")
+        .interact()?
+    {
+        return Ok(None);
+    }
+
+    let status = match status_prompt(":mountain_railway:", "commuting") {
+        Ok(s) => match s {
+            Some(s) => s,
+            None => std::process::exit(1),
+        },
+        Err(_) => std::process::exit(1),
+    };
+
+    Ok(Some(Config {
+        token: config.token.clone(),
+        ip_request_address: config.ip_request_address.clone(),
+        defaults: Some(Status {
+            text: status.text,
+            emoji: status.emoji,
+            expire_after_hours: status.expire_after_hours,
+        }),
+        locations: config.locations.clone(),
+    }))
+}
+
+/// Prompt for setup location.
+fn add_location_prompt(ip: IpAddr) -> BoxResult<Option<Location>> {
+    let theme = ColorfulTheme {
+        values_style: Style::new().yellow().dim(),
+        indicator_style: Style::new().yellow().bold(),
+        yes_style: Style::new().yellow().dim(),
+        no_style: Style::new().yellow().dim(),
+        ..ColorfulTheme::default()
+    };
+    println!("Your current location's public IP is: {}\n", ip);
+
+    if !Confirmation::with_theme(&theme)
+        .with_text("Do you want add a status or overwrite an existing one for this location?")
+        .interact()?
+    {
+        return Ok(None);
+    }
+
+    let status = match status_prompt(":house_with_garden:", "working remotely") {
+        Ok(s) => match s {
+            Some(s) => s,
+            None => std::process::exit(1),
+        },
+        Err(_) => std::process::exit(1),
+    };
+
+    Ok(Some(Location {
+        ip: ip,
+        text: status.text,
+        emoji: status.emoji,
+        expire_after_hours: status.expire_after_hours,
+    }))
+}
+
+/// Prompt for status.
+fn status_prompt(default_emoji: &str, default_text: &str) -> BoxResult<Option<Status>> {
+    let theme = ColorfulTheme {
+        values_style: Style::new().yellow().dim(),
+        indicator_style: Style::new().yellow().bold(),
+        yes_style: Style::new().yellow().dim(),
+        no_style: Style::new().yellow().dim(),
+        ..ColorfulTheme::default()
+    };
+
+    let emoji = Input::with_theme(&theme)
+        .with_prompt("emoji")
+        .default(default_emoji.parse().unwrap())
+        .interact()?;
+
+    let text = Input::with_theme(&theme)
+        .with_prompt("status")
+        .default(default_text.parse().unwrap())
+        .interact()?;
+
+    let expires = Select::with_theme(&theme)
+        .with_prompt("Status expires after")
+        .default(0)
+        .item("1 hour")
+        .item("1 day")
+        .item("never")
+        .interact()?;
+
+    Ok(Some(Status {
+        text: text,
+        emoji: emoji,
+        expire_after_hours: match expires {
+            0 => Some(1),
+            1 => Some(24),
+            _ => None,
+        },
+    }))
+}
+
+/// Setup logger.
 fn setup_logger(log_level: log::LevelFilter) -> Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, message, record| {

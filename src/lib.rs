@@ -21,7 +21,9 @@ use directories::ProjectDirs;
 use reqwest::blocking::*;
 
 pub type BoxResult<T> = Result<T,Box<dyn Error>>;
+pub type ReqwestResult = Result<reqwest::blocking::Response, reqwest::Error>;
 
+/// Slack Status, as sent to the API.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Status {
     pub text: String,
@@ -29,6 +31,7 @@ pub struct Status {
     pub expire_after_hours: Option<i64>,
 }
 
+/// A Location matches an IP address (either IPv4 or IPv6) with a Status.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Location {
     pub ip: IpAddr,
@@ -37,6 +40,7 @@ pub struct Location {
     pub expire_after_hours: Option<i64>,
 }
 
+/// Config as read/write in TOML file.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub token: String,
@@ -63,19 +67,29 @@ impl fmt::Display for Location {
 }
 
 impl Config {
+    /// Get the configuration file path either provided by the user or look at
+    /// default location:
+    ///
+    /// * Linux: /home/alice/.config/slack-status/config.toml
+    /// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml
+    /// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml
     fn get_file_path(path: Option<&str>) -> Option<PathBuf> {
+        // User-provided configuration path.
         if let Some(path) = path {
             debug!("Looking for configuration file in: {:?}", path);
             Some(PathBuf::from(path))
-        } else if let Some(config_dir) = get_config_dir() {
-            debug!("Looking for configuration file in: {:?}", config_dir);
-            Some(config_dir.join("config.toml"))
+        // Default OS location configuration path.
+        } else if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
+            debug!("Looking for configuration file in: {:?}", proj_dirs.config_dir());
+            Some(proj_dirs.config_dir().to_path_buf().join("config.toml"))
         } else {
             warn!("Cannot find configuration directory.");
             None
         }
     }
 
+    /// Read configuration either from path provided by the user or look at
+    /// default location.
     pub fn read(path: Option<&str>) -> BoxResult<Option<Config>> {
         if let Some(config_file_path) = Config::get_file_path(path) {
             match File::open(config_file_path) {
@@ -101,6 +115,8 @@ impl Config {
         }
     }
 
+    /// Save configuration either at path provided by the user or at default
+    /// location.
     pub fn save(&self, path: Option<&str>) -> BoxResult<()> {
         if let Some(config_file_path) = Config::get_file_path(path) {
             match File::create(config_file_path) {
@@ -130,7 +146,7 @@ impl Config {
 impl<'a> SlackStatus<'a> {
     pub fn from(config: &'a Config) -> BoxResult<SlackStatus> {
         if config.token.is_empty() {
-            bail!("You must copy your Slack legacy token to configuration file.");
+            bail!("You must copy your Slack token to configuration file.");
         };
 
         Ok(SlackStatus {
@@ -139,14 +155,16 @@ impl<'a> SlackStatus<'a> {
         })
     }
 
-    pub fn get_slack_status(&self) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    /// Request current Slack status.
+    pub fn get_slack_status(&self) -> ReqwestResult {
         debug!("Requesting Slack status...");
         self.client.get("https://slack.com/api/users.profile.get")
             .bearer_auth(&self.config.token)
             .send()
     }
 
-    pub fn set_slack_status(&self, status: Status) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    /// Set Slack status.
+    pub fn set_slack_status(&self, status: Status) -> ReqwestResult {
         debug!("Updating Slack status...");
         self.client.post("https://slack.com/api/users.profile.set")
             .bearer_auth(&self.config.token)
@@ -155,24 +173,27 @@ impl<'a> SlackStatus<'a> {
                         "status_text": status.text,
                         "status_emoji": status.emoji,
                         "status_expiration": Utc::now().timestamp() +
-                            Duration::hours(status.expire_after_hours.unwrap_or(1)).num_seconds(),
+                            Duration::hours(
+                                status.expire_after_hours.unwrap_or(1))
+                            .num_seconds(),
                     }
                 }))
             .send()
     }
 
+    /// Compute Slack status (currently only based on current location).
     pub fn status_from(&self, ip: &IpAddr) -> Status {
         match self.status_from_location(ip) {
             Some(status) => status,
             None => self.config.defaults.clone().unwrap_or(Status {
-                text: "on the move".to_string(),
+                text: "commuting".to_string(),
                 emoji: ":mountain_railway:".to_string(),
-                expire_after_hours: None,
+                expire_after_hours: Some(1),
             }),
         }
     }
 
-    /// Get status from configuration locations and current public IP.
+    /// Get status from configured locations and current public IP.
     pub fn status_from_location(&self, ip: &IpAddr) -> Option<Status> {
         let statuses: Vec<&Location> = self.config.locations.iter()
             .filter(|l| l.ip == *ip)
@@ -195,6 +216,7 @@ impl<'a> SlackStatus<'a> {
         }
     }
 
+    /// Get current public IP address.
     pub fn get_public_ip(&self) -> BoxResult<IpAddr> {
         let url = match &self.config.ip_request_address {
             Some(u) => u.clone(),
@@ -216,19 +238,5 @@ impl<'a> SlackStatus<'a> {
         }
 
         bail!(format!("Request error, status is: {}", resp.status()))
-    }
-}
-
-
-/// Get configuration from standard configuration directory:
-///
-/// * Linux: /home/alice/.config/slack-status/config.toml
-/// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml
-/// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml
-pub fn get_config_dir() -> Option<std::path::PathBuf> {
-    if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
-        Some(proj_dirs.config_dir().to_path_buf())
-    } else {
-        None
     }
 }

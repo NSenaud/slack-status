@@ -1,72 +1,120 @@
 Slack Status
 ============
 
-Update your Slack status automatically depending on your public IP.
 
-Although it doesn't work the same way, thanks to [slack-loc](https://github.com/kuy/slack-loc)
-for saving me some time reading documentation. Why using public IP instead of SSID?
-Because my company have several offices with the same WiFi SSID, and my goal is
-to be able to display in which office I am currently working in.
+Update your Slack status based on your current location.
 
 
 Features
 --------
 
-- [X] Set Slack status depending on your current public IP (v4)
-- [X] Status expires after one hour
-- [X] Custom address to request public IP address
-- [ ] Option to customize status expiration delay
+- [X] Set Slack status depending on your current public IP (either IPv4 or IPv6)
+- [X] Customizable address to request public IP address (ip.clara.net by default)
+- [X] Status expires after one hour by default (customizable)
+- [X] Managing saved locations from CLI
+- [X] Managing your Slack status from CLI
 - [ ] Option to set "on-call" status from PagerDuty
-- [ ] Managing locations frow CLI
 - [ ] Option to use SSID instead of public IP to detect location
 - [ ] Option to use OS location APIs?
 - [ ] Option to avoid requesting to an Internet server your public IP, like
       using the gateway MAC address to identify the office?
 
+I am only testing `slack-status` on Linux but it is expected to work on most
+x86 operating systems.
 
-Installation
-------------
+
+Getting started
+---------------
+
+### Create a Slack App with proper permissions
+
+You must either create a Slack App with `users.profile:read` and
+`users.profile:write` rights, and install it manually to your Slack workspace
+(you might have to ask a Slack administrator autorization).
+
+When it's done you can get an OAuth Access Token (beginning by `xoxp-...`
+followed by random characters), which will be asked during initial setup.
+
+[Legacy Slack tokens](https://api.slack.com/custom-integrations/legacy-tokens)
+should work too, but are not recommanded.
+
 
 ### Compilation
+
+You must have a Rust toolchain installed, if you don't have one juste install
+[Rustup](https://rustup.rs/) and use default settings, clone this repository,
+then run:
 
 ```bash
 cargo build --release
 ```
 
-You can use `cargo install` or copy the binary somewhere in your `$PATH`.
+
+### Installation
+
+You can use `cargo install` or copy the binary (`target/release/slack-status`)
+somewhere in your `$PATH`.
 
 
-### Configuration
+### Initial configuration
 
-An empty configuration file will be created at the standard configuration path
-if it doesn't exists yet:
+Run `slack-status` in a terminal, it will launch a wizard if you haven't a
+configuration file yet.
 
-* Linux: `/home/alice/.config/slack-status/config.toml`
-* Mac: `/Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml`
-* Windows: `C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml`
+By default, configuration file is created at the standard programs configuration
+path of your operating system:
 
-You must either create a Slack App with `users.profile:write` right, and install
-it manually to your workspace to get a OAuth Access Token, or user
-[legacy Slack token](https://api.slack.com/custom-integrations/legacy-tokens).
-In any case, you have to add the token (`xoxp-...`) to the configuration file.
+* Linux: `/home/<USER>/.config/slack-status/config.toml`
+* Mac: `/Users/<USER>/Library/Preferences/com.nsd.slack-status/config.toml`
+* Windows: `C:\Users\<USER>\AppData\Roaming\nsd\slack-status\config\config.toml`
 
-### Linux
 
-There is no package available at this time. I am using a SystemD timer but it's
-up to you:
+### Run `slack-status` automatically
+
+If you want to run `slack-status` automatically you must use the non-interactive
+flage:
 
 ```bash
-sudo cp target/release/slack-status /usr/local/bin
+slack_status -n
+```
+
+
+#### SystemD services (Linux)
+
+You can find sample SystemD timer and service in the `service` directory. To
+use them:
+
+```bash
 sudo cp services/linux/* /usr/lib/systemd/user
 sudo systemctl daemon-reload
 systemctl --user enable slack-status.timer
 systemctl --user start slack-status.timer
 ```
 
-### macOS
 
-Should work, LaunchD files to come.
+Usage
+-----
 
-### Windows
+To add a new location:
+```bash
+slack-status location add
+```
 
-It works, must find out how to make a timer on this platform.
+A prompt will appear to help you create a custom status for this location.
+
+To remove one or several locations:
+```bash
+slack-status location rm
+```
+
+A prompt will appear, you can use up and down arrows to navigate through
+locations and space bar to select those you want to remove.
+
+To manually set your Slack status:
+```bash
+slack-status status set
+```
+
+A prompt will appear to help you create a status.
+
+Use `slack-status --help` to see every commands available.
