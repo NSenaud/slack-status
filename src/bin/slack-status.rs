@@ -6,7 +6,7 @@ extern crate log;
 use std::net::IpAddr;
 
 use clap::App;
-use console::Style;
+use console::{Style, style};
 use dialoguer::{theme::ColorfulTheme, Checkboxes, Confirmation, Input, Select};
 
 use slack_status::*;
@@ -126,11 +126,18 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
             std::process::exit(1);
         },
     };
-    println!("Your current location's public IP is: {}", ip);
+    println!("{}: {}",
+        style("Current location's public IP").bold(),
+        style(ip).cyan()
+    );
 
     debug!("Computing status...");
     let status = client.status_from(&ip);
-    println!("Location's status is: {}", status);
+    let replacer = gh_emoji::Replacer::new();
+    println!("{}: {}",
+        style("Location's status").bold(),
+        style(replacer.replace_all(&format!("{}", status))).yellow()
+    );
 
     // Ask for confirmation before updating status if not in non-interactive mode.
     if non_interactive || Confirmation::new()
@@ -146,7 +153,13 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
         debug!("{:#?}", res);
 
         let replacer = gh_emoji::Replacer::new();
-        println!("Your new status is: {}", replacer.replace_all(&format!("{}", status)));
+        println!("{}",
+            style(
+                replacer.replace_all(":heavy_check_mark: Slack status updated")
+            )
+            .bold()
+            .green()
+        );
     } else {
         println!("Nevermind then :(");
         return;
@@ -157,8 +170,13 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
 fn list_locations(client: &SlackStatus) {
     debug!("Listing locations...");
     let replacer = gh_emoji::Replacer::new();
-    for location in client.config.locations.iter() {
-        println!(" - {}", replacer.replace_all(&format!("{}", location)));
+    for (n, l) in client.config.locations.iter().enumerate() {
+        println!(" {}. {}: {} {}",
+            style(n + 1).blue(),
+            style(l.ip).cyan(),
+            replacer.replace_all(&format!("{}", l.emoji)),
+            style(&l.text).yellow(),
+        );
     }
 }
 
@@ -173,7 +191,6 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
             std::process::exit(1);
         },
     };
-    info!("Public IP is: {}", ip);
 
     let location = match add_location_prompt(ip) {
         Ok(l) => match l {
@@ -184,7 +201,12 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
     };
 
     let replacer = gh_emoji::Replacer::new();
-    println!("Location status is: {}", replacer.replace_all(&format!("{}", location)));
+    println!("{}: {} => {} {}",
+        style("New location status").bold(),
+        style(location.ip).cyan(),
+        replacer.replace_all(&format!("{}", location.emoji)),
+        style(&location.text).yellow(),
+    );
 
     let mut config = old_config.clone();
     // Remove current status for this location, if any.
@@ -196,7 +218,7 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
     config.locations.push(location);
 
     match config.save(custom_path) {
-        Ok(_) => println!("Configuration saved!"),
+        Ok(_) => print_configuration_saved(),
         Err(e) => {
             error!("Failed to save configuration file: {}", e);
             std::process::exit(1);
@@ -216,14 +238,20 @@ fn rm_location(old_config: &Config, custom_path: Option<&str>) {
         .unwrap();
 
     if selections.is_empty() {
-        println!("No modification have been performed.");
+        println!("{}", style("No modification have been performed.").yellow());
         std::process::exit(0);
     } else {
         let mut tbr = Vec::<&Location>::new();
-        println!("You selected these locations to be removed:");
-        for selection in selections {
-            println!("  {}", checkboxes[selection]);
-            tbr.push(&checkboxes[selection]);
+        let replacer = gh_emoji::Replacer::new();
+
+        println!("{}", style("You selected these locations to be removed:").bold());
+        for s in selections {
+            println!("  {} => {} {}",
+                style(checkboxes[s].ip).cyan(),
+                replacer.replace_all(&format!("{}", checkboxes[s].emoji)),
+                style(&checkboxes[s].text).yellow(),
+            );
+            tbr.push(&checkboxes[s]);
         }
 
         if Confirmation::new()
@@ -239,14 +267,14 @@ fn rm_location(old_config: &Config, custom_path: Option<&str>) {
                 .map(|l| l.clone()).collect();
 
             match config.save(custom_path) {
-                Ok(_) => println!("Configuration saved!"),
+                Ok(_) => print_configuration_saved(),
                 Err(e) => {
                     error!("Failed to save configuration file: {}", e);
                     std::process::exit(1);
                 },
             };
         } else {
-            println!("No modification have been performed.");
+            println!("{}", style("No modification have been performed.").yellow());
             std::process::exit(0);
         }
     }
@@ -278,7 +306,10 @@ fn set_status(client: &SlackStatus) {
         debug!("{:#?}", res);
 
         let replacer = gh_emoji::Replacer::new();
-        println!("Your new status is: {}", replacer.replace_all(&format!("{}", status)));
+        println!("{}: {}",
+            style("New Slack status").bold(),
+            style(replacer.replace_all(&format!("{}", status))).yellow()
+        );
     } else {
         println!("Nevermind then :(");
         return;
@@ -390,10 +421,13 @@ fn add_location_prompt(ip: IpAddr) -> BoxResult<Option<Location>> {
         no_style: Style::new().yellow().dim(),
         ..ColorfulTheme::default()
     };
-    println!("Your current location's public IP is: {}\n", ip);
+    println!("{}: {}",
+        style("Current location's public IP").bold(),
+        style(ip).cyan()
+    );
 
     if !Confirmation::with_theme(&theme)
-        .with_text("Do you want add a status or overwrite an existing one for this location?")
+        .with_text("Do you want add/overwrite status for this location?")
         .interact()?
     {
         return Ok(None);
@@ -470,4 +504,15 @@ fn setup_logger(log_level: log::LevelFilter) -> Result<(), fern::InitError> {
         .chain(std::io::stdout())
         .apply()?;
     Ok(())
+}
+
+fn print_configuration_saved() {
+    let replacer = gh_emoji::Replacer::new();
+    println!("{}",
+        style(
+            replacer.replace_all(":heavy_check_mark: Configuration saved!")
+        )
+        .bold()
+        .green()
+    )
 }
