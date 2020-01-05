@@ -10,7 +10,7 @@ Features
 
 - [X] Set Slack status depending on your current public IP (either IPv4 or IPv6)
 - [X] Customizable address to request public IP address (ip.clara.net by default)
-- [X] Status expires after one hour by default (customizable)
+- [X] Option to set status expiration
 - [X] Managing saved locations from CLI
 - [X] Managing your Slack status from CLI
 - [ ] Option to set "on-call" status from PagerDuty

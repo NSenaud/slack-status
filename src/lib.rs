@@ -172,10 +172,12 @@ impl<'a> SlackStatus<'a> {
                     "profile": {
                         "status_text": status.text,
                         "status_emoji": status.emoji,
-                        "status_expiration": Utc::now().timestamp() +
-                            Duration::hours(
-                                status.expire_after_hours.unwrap_or(1))
-                            .num_seconds(),
+                        "status_expiration": match status.expire_after_hours {
+                            Some(h) =>
+                                Utc::now().timestamp() +
+                                    Duration::hours(h).num_seconds(),
+                            None => 0,
+                        },
                     }
                 }))
             .send()
