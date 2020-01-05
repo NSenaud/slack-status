@@ -164,7 +164,7 @@ impl<'a> SlackStatus<'a> {
     }
 
     /// Set Slack status.
-    pub fn set_slack_status(&self, status: Status) -> ReqwestResult {
+    pub fn set_slack_status(&self, status: &Status) -> ReqwestResult {
         debug!("Updating Slack status...");
         self.client.post("https://slack.com/api/users.profile.set")
             .bearer_auth(&self.config.token)

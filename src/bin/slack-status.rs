@@ -139,12 +139,14 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        let res: reqwest::blocking::Response = match client.set_slack_status(status) {
+        let res: reqwest::blocking::Response = match client.set_slack_status(&status) {
             Ok(res) => res,
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
-        println!("Your Slack status have been updated!");
         debug!("{:#?}", res);
+
+        let replacer = gh_emoji::Replacer::new();
+        println!("Your new status is: {}", replacer.replace_all(&format!("{}", status)));
     } else {
         println!("Nevermind then :(");
         return;
@@ -154,8 +156,9 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
 /// Print the list of configured locations.
 fn list_locations(client: &SlackStatus) {
     debug!("Listing locations...");
+    let replacer = gh_emoji::Replacer::new();
     for location in client.config.locations.iter() {
-        println!(" - {}", location);
+        println!(" - {}", replacer.replace_all(&format!("{}", location)));
     }
 }
 
@@ -173,9 +176,15 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
     info!("Public IP is: {}", ip);
 
     let location = match add_location_prompt(ip) {
-        Ok(loc) => loc,
+        Ok(l) => match l {
+            Some(l) => l,
+            None => std::process::exit(1),
+        },
         Err(_) => std::process::exit(1),
     };
+
+    let replacer = gh_emoji::Replacer::new();
+    println!("Location status is: {}", replacer.replace_all(&format!("{}", location)));
 
     let mut config = old_config.clone();
     // Remove current status for this location, if any.
@@ -184,7 +193,7 @@ fn add_location(client: &SlackStatus, old_config: &Config, custom_path: Option<&
         .map(|l| l.clone()).collect();
 
     // Add new status for this location.
-    config.locations.push(location.unwrap());
+    config.locations.push(location);
 
     match config.save(custom_path) {
         Ok(_) => println!("Configuration saved!"),
@@ -262,12 +271,14 @@ fn set_status(client: &SlackStatus) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        let res: reqwest::blocking::Response = match client.set_slack_status(status) {
+        let res: reqwest::blocking::Response = match client.set_slack_status(&status) {
             Ok(res) => res,
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
-        println!("Your Slack status have been updated!");
         debug!("{:#?}", res);
+
+        let replacer = gh_emoji::Replacer::new();
+        println!("Your new status is: {}", replacer.replace_all(&format!("{}", status)));
     } else {
         println!("Nevermind then :(");
         return;
