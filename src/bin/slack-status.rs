@@ -38,10 +38,10 @@ fn main() {
 
     let prompt = Prompt {
         theme: ColorfulTheme {
-            values_style: Style::new().yellow().dim(),
-            indicator_style: Style::new().yellow().bold(),
-            yes_style: Style::new().yellow().dim(),
-            no_style: Style::new().yellow().dim(),
+            values_style: Style::new().magenta().dim(),
+            indicator_style: Style::new().magenta().bold(),
+            yes_style: Style::new().magenta().dim(),
+            no_style: Style::new().magenta().dim(),
             ..ColorfulTheme::default()
         }
     };
