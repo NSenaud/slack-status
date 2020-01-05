@@ -165,24 +165,15 @@ impl<'a> SlackStatus<'a> {
         {
             Ok(res) => match res.text() {
                 Ok(r) => r,
-                Err(e) => {
-                    error!("Failed to get your Slack status: {:?}", e);
-                    std::process::exit(1);
-                },
+                Err(e) => bail!("Failed to get your Slack status: {:?}", e),
             },
-            Err(e) => {
-                error!("Failed to get your Slack status: {:?}", e);
-                std::process::exit(1);
-            },
+            Err(e) => bail!("Failed to get your Slack status: {:?}", e),
         };
         debug!("{:#?}", res);
 
         let value: Value = match serde_json::from_str(&res) {
             Ok(v) => v,
-            Err(e) => {
-                error!("Cannot deserialize: {}", e);
-                std::process::exit(1);
-            }
+            Err(e) => bail!("Cannot deserialize: {}", e),
         };
 
         let text = value["profile"]["status_text"].to_string();

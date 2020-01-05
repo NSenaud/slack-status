@@ -4,6 +4,7 @@ extern crate clap;
 extern crate log;
 
 use std::net::IpAddr;
+use std::process::exit;
 
 use clap::App;
 use console::{Style, style};
@@ -55,12 +56,12 @@ fn main() {
                         first_init = true;
                         c
                     },
-                    Err(_) => std::process::exit(1),
+                    Err(_) => exit(1),
             },
         },
         Err(e) => {
             error!("Cannot read configuration file: {}", e);
-            std::process::exit(1);
+            exit(1);
         },
     };
 
@@ -69,7 +70,7 @@ fn main() {
         Ok(c) => c,
         Err(e) => {
             println!("{}", e);
-            std::process::exit(1);
+            exit(1);
         }
     };
 
@@ -98,10 +99,10 @@ fn main() {
             set_status(&prompt, &client);
         }
     } else {
-        status_update(&client, matches.is_present("noninteractive"));
+        status_update(&prompt, &client, matches.is_present("noninteractive"));
     }
 
-    std::process::exit(0)
+    exit(0)
 }
 
 /// Launch configuration wizard.
@@ -110,9 +111,9 @@ fn configuration_wizard(prompt: &Prompt, path: Option<&str>) -> BoxResult<Config
     let minimal_config = match prompt.required_config() {
         Ok(c) => match c {
             Some(c) => c,
-            None => std::process::exit(1),
+            None => exit(1),
         },
-        Err(_) => std::process::exit(1),
+        Err(_) => exit(1),
     };
 
     // Can fail to continue
@@ -125,7 +126,7 @@ fn configuration_wizard(prompt: &Prompt, path: Option<&str>) -> BoxResult<Config
         Ok(_) => println!("Configuration saved!"),
         Err(e) => {
             error!("Failed to save configuration file: {}", e);
-            std::process::exit(1);
+            exit(1);
         },
     };
 
@@ -133,13 +134,13 @@ fn configuration_wizard(prompt: &Prompt, path: Option<&str>) -> BoxResult<Config
 }
 
 /// Update Slack status based on current location..
-fn status_update(client: &SlackStatus, non_interactive: bool) {
+fn status_update(prompt: &Prompt, client: &SlackStatus, non_interactive: bool) {
     debug!("Requesting public ip...");
     let ip = match client.get_public_ip() {
         Ok(ip) => ip,
         Err(e) => {
             error!("Cannot get public IP: {}", e);
-            std::process::exit(1);
+            exit(1);
         },
     };
     println!("{}: {}",
@@ -156,7 +157,7 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
     );
 
     // Ask for confirmation before updating status if not in non-interactive mode.
-    if non_interactive || Confirmation::new()
+    if non_interactive || Confirmation::with_theme(&prompt.theme)
         .with_text("Do you want to update your status?")
         .interact()
         .unwrap()
@@ -167,8 +168,7 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
     } else {
-        println!("Nevermind then :(");
-        return;
+        println!("{}", style("No modification have been performed.").yellow());
     }
 }
 
@@ -194,16 +194,16 @@ fn add_location(prompt: &Prompt, client: &SlackStatus, old_config: &Config, cust
         Ok(ip) => ip,
         Err(e) => {
             error!("Cannot get public IP: {}", e);
-            std::process::exit(1);
+            exit(1);
         },
     };
 
     let location = match prompt.add_location(ip) {
         Ok(l) => match l {
             Some(l) => l,
-            None => std::process::exit(1),
+            None => exit(1),
         },
-        Err(_) => std::process::exit(1),
+        Err(_) => exit(1),
     };
 
     let replacer = gh_emoji::Replacer::new();
@@ -214,22 +214,30 @@ fn add_location(prompt: &Prompt, client: &SlackStatus, old_config: &Config, cust
         style(&location.text).yellow(),
     );
 
-    let mut config = old_config.clone();
-    // Remove current status for this location, if any.
-    config.locations = old_config.locations.iter()
-        .filter(|l| l.ip != ip)
-        .map(|l| l.clone()).collect();
+    if Confirmation::with_theme(&prompt.theme)
+        .with_text("Add/replace location status?")
+        .interact()
+        .unwrap()
+    {
+        let mut config = old_config.clone();
+        // Remove current status for this location, if any.
+        config.locations = old_config.locations.iter()
+            .filter(|l| l.ip != ip)
+            .map(|l| l.clone()).collect();
 
-    // Add new status for this location.
-    config.locations.push(location);
+        // Add new status for this location.
+        config.locations.push(location);
 
-    match config.save(custom_path) {
-        Ok(_) => print_configuration_saved(),
-        Err(e) => {
-            error!("Failed to save configuration file: {}", e);
-            std::process::exit(1);
-        },
-    };
+        match config.save(custom_path) {
+            Ok(_) => print_configuration_saved(),
+            Err(e) => {
+                error!("Failed to save configuration file: {}", e);
+                exit(1);
+            },
+        };
+    } else {
+        println!("{}", style("No modification have been performed.").yellow());
+    }
 }
 
 /// Remove some configured locations.
@@ -245,7 +253,7 @@ fn rm_location(prompt: &Prompt, old_config: &Config, custom_path: Option<&str>) 
 
     if selections.is_empty() {
         println!("{}", style("No modification have been performed.").yellow());
-        std::process::exit(0);
+        exit(0);
     } else {
         let mut tbr = Vec::<&Location>::new();
         let replacer = gh_emoji::Replacer::new();
@@ -276,12 +284,11 @@ fn rm_location(prompt: &Prompt, old_config: &Config, custom_path: Option<&str>) 
                 Ok(_) => print_configuration_saved(),
                 Err(e) => {
                     error!("Failed to save configuration file: {}", e);
-                    std::process::exit(1);
+                    exit(1);
                 },
             };
         } else {
             println!("{}", style("No modification have been performed.").yellow());
-            std::process::exit(0);
         }
     }
 }
@@ -293,13 +300,12 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
     let status = match prompt.status(":house_with_garden:", "working remotely") {
         Ok(s) => match s {
             Some(s) => s,
-            None => std::process::exit(1),
+            None => exit(1),
         },
-        Err(_) => std::process::exit(1),
+        Err(_) => exit(1),
     };
 
-    // Ask for confirmation before updating status if not in non-interactive mode.
-    if Confirmation::new()
+    if Confirmation::with_theme(&prompt.theme)
         .with_text("Update your status?")
         .interact()
         .unwrap()
@@ -310,8 +316,7 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
     } else {
-        println!("Nevermind then :(");
-        return;
+        println!("{}", style("No modification have been performed.").yellow());
     }
 }
 
@@ -323,12 +328,12 @@ fn get_status(client: &SlackStatus) {
             Some(s) => s,
             None => {
                 println!("No status set!");
-                std::process::exit(0);
+                exit(0);
             },
         },
         Err(e) => {
             error!("Cannot get status: {}", e);
-            std::process::exit(1);
+            exit(1);
         },
     };
 
@@ -382,9 +387,9 @@ impl Prompt {
         let status = match self.status(":mountain_railway:", "commuting") {
             Ok(s) => match s {
                 Some(s) => s,
-                None => std::process::exit(1),
+                None => exit(1),
             },
-            Err(_) => std::process::exit(1),
+            Err(_) => exit(1),
         };
 
         Ok(Some(Config {
@@ -416,9 +421,9 @@ impl Prompt {
         let status = match self.status(":house_with_garden:", "working remotely") {
             Ok(s) => match s {
                 Some(s) => s,
-                None => std::process::exit(1),
+                None => exit(1),
             },
-            Err(_) => std::process::exit(1),
+            Err(_) => exit(1),
         };
 
         Ok(Some(Location {
