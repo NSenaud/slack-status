@@ -8,6 +8,7 @@ use std::net::IpAddr;
 use clap::App;
 use console::{Style, style};
 use dialoguer::{theme::ColorfulTheme, Checkboxes, Confirmation, Input, Select};
+use serde_json::Value;
 
 use slack_status::*;
 
@@ -336,9 +337,9 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
 fn get_status(client: &SlackStatus) {
     debug!("Requesting your current status...");
 
-    let status = match client.get_slack_status() {
+    let res = match client.get_slack_status() {
         Ok(res) => match res.text() {
-            Ok(s) => s,
+            Ok(r) => r,
             Err(e) => {
                 error!("Failed to get your Slack status: {:?}", e);
                 std::process::exit(1);
@@ -349,10 +350,24 @@ fn get_status(client: &SlackStatus) {
             std::process::exit(1);
         },
     };
+    debug!("{:#?}", res);
 
-    // TODO: Finish this code as soon as I have the right.
-    println!("Your Slack status is: {:#?}", status);
-    debug!("{:#?}", status);
+    let value: Value = match serde_json::from_str(&res) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Cannot deserialize: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let text = value["profile"]["status_text"].to_string();
+    let emoji = value["profile"]["status_emoji"].to_string();
+
+    let replacer = gh_emoji::Replacer::new();
+    println!("{} {}",
+        replacer.replace_all(&format!("{}", emoji.trim_matches('"'))),
+        style(text.trim_matches('"')).yellow(),
+    );
 }
 
 impl Prompt {
