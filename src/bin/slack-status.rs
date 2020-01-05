@@ -8,7 +8,6 @@ use std::net::IpAddr;
 use clap::App;
 use console::{Style, style};
 use dialoguer::{theme::ColorfulTheme, Checkboxes, Confirmation, Input, Select};
-use serde_json::Value;
 
 use slack_status::*;
 
@@ -163,20 +162,10 @@ fn status_update(client: &SlackStatus, non_interactive: bool) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        let res: reqwest::blocking::Response = match client.set_slack_status(&status) {
-            Ok(res) => res,
+        match client.set_slack_status(&status) {
+            Ok(_) => print_slack_status_updated(),
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
-        debug!("{:#?}", res);
-
-        let replacer = gh_emoji::Replacer::new();
-        println!("{}",
-            style(
-                replacer.replace_all(":heavy_check_mark: Slack status updated")
-            )
-            .bold()
-            .green()
-        );
     } else {
         println!("Nevermind then :(");
         return;
@@ -316,17 +305,10 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        let res: reqwest::blocking::Response = match client.set_slack_status(&status) {
-            Ok(res) => res,
+        match client.set_slack_status(&status) {
+            Ok(_) => print_slack_status_updated(),
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
-        debug!("{:#?}", res);
-
-        let replacer = gh_emoji::Replacer::new();
-        println!("{}: {}",
-            style("New Slack status").bold(),
-            style(replacer.replace_all(&format!("{}", status))).yellow()
-        );
     } else {
         println!("Nevermind then :(");
         return;
@@ -336,37 +318,24 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
 /// Request current Slack status.
 fn get_status(client: &SlackStatus) {
     debug!("Requesting your current status...");
-
-    let res = match client.get_slack_status() {
-        Ok(res) => match res.text() {
-            Ok(r) => r,
-            Err(e) => {
-                error!("Failed to get your Slack status: {:?}", e);
-                std::process::exit(1);
+    let status = match client.get_slack_status() {
+        Ok(r) => match r {
+            Some(s) => s,
+            None => {
+                println!("No status set!");
+                std::process::exit(0);
             },
         },
         Err(e) => {
-            error!("Failed to get your Slack status: {:?}", e);
+            error!("Cannot get status: {}", e);
             std::process::exit(1);
         },
     };
-    debug!("{:#?}", res);
-
-    let value: Value = match serde_json::from_str(&res) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Cannot deserialize: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let text = value["profile"]["status_text"].to_string();
-    let emoji = value["profile"]["status_emoji"].to_string();
 
     let replacer = gh_emoji::Replacer::new();
     println!("{} {}",
-        replacer.replace_all(&format!("{}", emoji.trim_matches('"'))),
-        style(text.trim_matches('"')).yellow(),
+        replacer.replace_all(&format!("{}", status.emoji)),
+        style(status.text).yellow(),
     );
 }
 
@@ -519,4 +488,15 @@ fn print_configuration_saved() {
         .bold()
         .green()
     )
+}
+
+fn print_slack_status_updated() {
+    let replacer = gh_emoji::Replacer::new();
+    println!("{}",
+        style(
+            replacer.replace_all(":heavy_check_mark: Slack status updated")
+        )
+        .bold()
+        .green()
+    );
 }

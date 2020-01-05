@@ -19,6 +19,7 @@ use chrono::prelude::*;
 use chrono::Duration;
 use directories::ProjectDirs;
 use reqwest::blocking::*;
+use serde_json::Value;
 
 pub type BoxResult<T> = Result<T,Box<dyn Error>>;
 pub type ReqwestResult = Result<reqwest::blocking::Response, reqwest::Error>;
@@ -156,17 +157,49 @@ impl<'a> SlackStatus<'a> {
     }
 
     /// Request current Slack status.
-    pub fn get_slack_status(&self) -> ReqwestResult {
+    pub fn get_slack_status(&self) -> BoxResult<Option<Status>>{
         debug!("Requesting Slack status...");
-        self.client.get("https://slack.com/api/users.profile.get")
+        let res = match self.client.get("https://slack.com/api/users.profile.get")
             .bearer_auth(&self.config.token)
             .send()
+        {
+            Ok(res) => match res.text() {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("Failed to get your Slack status: {:?}", e);
+                    std::process::exit(1);
+                },
+            },
+            Err(e) => {
+                error!("Failed to get your Slack status: {:?}", e);
+                std::process::exit(1);
+            },
+        };
+        debug!("{:#?}", res);
+
+        let value: Value = match serde_json::from_str(&res) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Cannot deserialize: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        let text = value["profile"]["status_text"].to_string();
+        let emoji = value["profile"]["status_emoji"].to_string();
+
+        Ok(Some(Status {
+            text: text.trim_matches('"').to_string(),
+            emoji: emoji.trim_matches('"').to_string(),
+            // TODO: add support for expiration.
+            expire_after_hours: None,
+        }))
     }
 
     /// Set Slack status.
-    pub fn set_slack_status(&self, status: &Status) -> ReqwestResult {
+    pub fn set_slack_status(&self, status: &Status) -> BoxResult<()> {
         debug!("Updating Slack status...");
-        self.client.post("https://slack.com/api/users.profile.set")
+        let res = self.client.post("https://slack.com/api/users.profile.set")
             .bearer_auth(&self.config.token)
             .json(&json!({
                     "profile": {
@@ -180,7 +213,11 @@ impl<'a> SlackStatus<'a> {
                         },
                     }
                 }))
-            .send()
+            .send();
+
+        debug!("{:#?}", res);
+
+        Ok(())
     }
 
     /// Compute Slack status (currently only based on current location).
