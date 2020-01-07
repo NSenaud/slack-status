@@ -163,7 +163,7 @@ fn status_update(prompt: &Prompt, client: &SlackStatus, non_interactive: bool) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        match client.set_slack_status(&status) {
+        match client.set_slack_status(&status, !non_interactive) {
             Ok(_) => print_slack_status_updated(),
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
@@ -311,7 +311,7 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
         .unwrap()
     {
         debug!("Updating Slack status...");
-        match client.set_slack_status(&status) {
+        match client.set_slack_status(&status, true) {
             Ok(_) => print_slack_status_updated(),
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
@@ -395,7 +395,7 @@ impl Prompt {
         Ok(Some(Config {
             token: config.token.clone(),
             ip_request_address: config.ip_request_address.clone(),
-            defaults: Some(Status {
+            defaults: Some(StatusConfig {
                 text: status.text,
                 emoji: status.emoji,
                 expire_after_hours: status.expire_after_hours,
@@ -435,7 +435,7 @@ impl Prompt {
     }
 
     /// Prompt for status.
-    fn status(&self, default_emoji: &str, default_text: &str) -> BoxResult<Option<Status>> {
+    fn status(&self, default_emoji: &str, default_text: &str) -> BoxResult<Option<StatusConfig>> {
         let emoji = Input::with_theme(&self.theme)
             .with_prompt("emoji")
             .default(default_emoji.parse().unwrap())
@@ -454,7 +454,7 @@ impl Prompt {
             .item("never")
             .interact()?;
 
-        Ok(Some(Status {
+        Ok(Some(StatusConfig {
             text: text,
             emoji: emoji,
             expire_after_hours: match expires {
