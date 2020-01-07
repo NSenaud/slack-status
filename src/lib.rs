@@ -190,9 +190,7 @@ impl<'a> SlackStatus<'a> {
     /// Set Slack status.
     pub fn set_slack_status(&self, status: &Status) -> BoxResult<()> {
         debug!("Updating Slack status...");
-        let res = self.client.post("https://slack.com/api/users.profile.set")
-            .bearer_auth(&self.config.token)
-            .json(&json!({
+        let data = json!({
                     "profile": {
                         "status_text": status.text,
                         "status_emoji": status.emoji,
@@ -203,7 +201,12 @@ impl<'a> SlackStatus<'a> {
                             None => 0,
                         },
                     }
-                }))
+                });
+        debug!("data: {}", &data);
+
+        let res = self.client.post("https://slack.com/api/users.profile.set")
+            .bearer_auth(&self.config.token)
+            .json(&data)
             .send();
 
         debug!("{:#?}", res);
@@ -236,7 +239,7 @@ impl<'a> SlackStatus<'a> {
                 Some(Status {
                     text: statuses[0].text.clone(),
                     emoji: statuses[0].emoji.clone(),
-                    expire_after_hours: None,
+                    expire_after_hours: statuses[0].expire_after_hours.clone(),
                 })
             },
             _ => {
