@@ -97,6 +97,9 @@ fn main() {
         } else if let Some(_) = submatches.subcommand_matches("set") {
             // slack-status status set
             set_status(&prompt, &client);
+        } else if let Some(_) = submatches.subcommand_matches("reset-cache") {
+            // slack-status status reset-cache
+            reset_cache();
         }
     } else {
         status_update(&prompt, &client, matches.is_present("noninteractive"));
@@ -342,6 +345,20 @@ fn get_status(client: &SlackStatus) {
         replacer.replace_all(&format!("{}", status.emoji)),
         style(status.text).yellow(),
     );
+}
+
+/// Reset status cache.
+fn reset_cache() {
+    debug!("Reset cache");
+    match Cache::reset() {
+        Ok(_) => println!("{}", style("Cache reset").green()),
+        Err(e) =>
+            println!("{} {}",
+                style("Faild to reset cache:").red(),
+                style(e).red(),
+            )
+        ,
+    }
 }
 
 impl Prompt {

@@ -247,6 +247,16 @@ impl Cache {
             bail!("Cannot find application cache directory.");
         }
     }
+
+    /// Reset cache (remove cache file).
+    pub fn reset() -> BoxResult<()> {
+        if let Some(cache_file_path) = Cache::get_file_path() {
+            std::fs::remove_file(cache_file_path)?;
+            Ok(())
+        } else {
+            bail!("Cannot find application cache directory.");
+        }
+    }
 }
 
 impl<'a> SlackStatus<'a> {
@@ -296,7 +306,6 @@ impl<'a> SlackStatus<'a> {
     pub fn set_slack_status(&self, status: &StatusConfig, manually_set: bool) -> BoxResult<()> {
         // If the status have been set manually and haven't expired yet, then
         // it won't be automatically updated.
-        // TODO: Add a reset cache command
         if !manually_set {
             let cache_file = match Cache::read() {
                 Ok(c) => c,

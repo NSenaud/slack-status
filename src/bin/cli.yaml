@@ -39,3 +39,6 @@ subcommands:
             - set:
                 about: Set your current status
                 takes_value: false
+            - reset-cache:
+                about: Reset status cache, useful to remove a manually-set status
+                takes_value: false
