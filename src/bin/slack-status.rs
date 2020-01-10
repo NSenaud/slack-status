@@ -133,7 +133,7 @@ fn configuration_wizard(prompt: &Prompt, path: Option<&str>) -> BoxResult<Config
     Ok(config)
 }
 
-/// Update Slack status based on current location..
+/// Update Slack status based on current location.
 fn status_update(prompt: &Prompt, client: &SlackStatus, non_interactive: bool) {
     debug!("Requesting public ip...");
     let ip = match client.get_public_ip() {
