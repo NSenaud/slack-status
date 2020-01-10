@@ -30,6 +30,9 @@ subcommands:
             - rm:
                 about: Remove location
                 takes_value: false
+            - ignore:
+                about: Ignore current location (use previous status instead)
+                takes_value: false
     - status:
         about: Manage your current status
         subcommands:

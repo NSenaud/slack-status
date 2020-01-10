@@ -50,11 +50,20 @@ pub struct Location {
     pub expire_after_hours: Option<i64>,
 }
 
-/// Config as read/write in TOML file.
+/// Config, as read/write in configuration TOML file.
+///
+/// * token: Slack token, must have r/w right on user profile.
+/// * ip_request_address: URL to request public IP address.
+/// * locations: List of Location to set profile.
+/// * ignore_ips: List of public IPs to ignore when setting status, such as
+///               VPNs output addresses. In this case the cached status is
+///               used instead.
+/// * defaults: Status to use when you have no status associated to location.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub token: String,
     pub ip_request_address: Option<String>,
+    pub ignore_ips: Vec<IpAddr>,
     pub locations: Vec<Location>,
     pub defaults: Option<StatusConfig>,
 }
@@ -84,6 +93,17 @@ impl fmt::Display for Location {
 }
 
 impl Config {
+    /// Create minimal config with token.
+    pub fn with(token: String) -> Config {
+        Config {
+            token: token,
+            ip_request_address: None,
+            ignore_ips: Vec::<IpAddr>::new(),
+            locations: Vec::<Location>::new(),
+            defaults: None,
+        }
+    }
+
     /// Get the configuration file path either provided by the user or look at
     /// default location:
     ///
@@ -360,8 +380,31 @@ impl<'a> SlackStatus<'a> {
         Ok(())
     }
 
-    /// Compute Slack status (currently only based on current location).
+    // TODO: UX: make it clear when status come from cache.
+
+    /// Compute Slack status based on current location.
     pub fn status_from(&self, ip: &IpAddr) -> StatusConfig {
+        // Check if location is set to be ignored, in that case get status from
+        // cache
+        if self.config.ignore_ips.iter().any(|i| i == ip) {
+            let cache_file = match Cache::read() {
+                Ok(c) => c,
+                Err(e) => {
+                    error!("Cannot read cache: {}", e);
+                    None
+                },
+            };
+
+            if let Some(cache) = cache_file {
+                return StatusConfig {
+                    text: cache.status.text,
+                    emoji: cache.status.emoji,
+                    expire_after_hours: None,
+                }
+            }
+        }
+
+        // Else try to get location from location
         match self.status_from_location(ip) {
             Some(status) => status,
             None => self.config.defaults.clone().unwrap_or(StatusConfig {

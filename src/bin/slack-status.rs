@@ -89,6 +89,9 @@ fn main() {
         } else if let Some(_) = submatches.subcommand_matches("rm") {
             // slack-status location rm
             rm_location(&prompt, &config, matches.value_of("config"));
+        } else if let Some(_) = submatches.subcommand_matches("ignore") {
+            // slack-status location ignore
+            ignore_location(&prompt, &client, &config, matches.value_of("config"));
         }
     } else if let Some(submatches) = matches.subcommand_matches("status") {
         if let Some(_) = submatches.subcommand_matches("get") {
@@ -146,10 +149,7 @@ fn status_update(prompt: &Prompt, client: &SlackStatus, non_interactive: bool) {
             exit(1);
         },
     };
-    println!("{}: {}",
-        style("Current location's public IP").bold(),
-        style(ip).cyan()
-    );
+    print_ip(&ip);
 
     debug!("Computing status...");
     let status = client.status_from(&ip);
@@ -171,7 +171,7 @@ fn status_update(prompt: &Prompt, client: &SlackStatus, non_interactive: bool) {
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
     } else {
-        println!("{}", style("No modification have been performed.").yellow());
+        print_no_modification();
     }
 }
 
@@ -239,7 +239,7 @@ fn add_location(prompt: &Prompt, client: &SlackStatus, old_config: &Config, cust
             },
         };
     } else {
-        println!("{}", style("No modification have been performed.").yellow());
+        print_no_modification();
     }
 }
 
@@ -255,8 +255,7 @@ fn rm_location(prompt: &Prompt, old_config: &Config, custom_path: Option<&str>) 
         .unwrap();
 
     if selections.is_empty() {
-        println!("{}", style("No modification have been performed.").yellow());
-        exit(0);
+        print_no_modification();
     } else {
         let mut tbr = Vec::<&Location>::new();
         let replacer = gh_emoji::Replacer::new();
@@ -291,8 +290,42 @@ fn rm_location(prompt: &Prompt, old_config: &Config, custom_path: Option<&str>) 
                 },
             };
         } else {
-            println!("{}", style("No modification have been performed.").yellow());
+            print_no_modification();
         }
+    }
+}
+
+/// Ignore current location to set Slack Status.
+fn ignore_location(prompt: &Prompt, client: &SlackStatus, old_config: &Config, custom_path: Option<&str>) {
+    debug!("Ignoring current location...");
+    debug!("Requesting public ip...");
+    let ip = match client.get_public_ip() {
+        Ok(ip) => ip,
+        Err(e) => {
+            error!("Cannot get public IP: {}", e);
+            exit(1);
+        },
+    };
+
+    print_ip(&ip);
+
+    if Confirmation::with_theme(&prompt.theme)
+        .with_text("Ignore this location to set status?")
+        .interact()
+        .unwrap()
+    {
+        let mut config = old_config.clone();
+        config.ignore_ips.push(ip);
+
+        match config.save(custom_path) {
+            Ok(_) => print_configuration_saved(),
+            Err(e) => {
+                error!("Failed to save configuration file: {}", e);
+                exit(1);
+            },
+        };
+    } else {
+        print_no_modification();
     }
 }
 
@@ -319,7 +352,7 @@ fn set_status(prompt: &Prompt, client: &SlackStatus) {
             Err(e) => panic!("Failed to change status: {:?}", e),
         };
     } else {
-        println!("{}", style("No modification have been performed.").yellow());
+        print_no_modification();
     }
 }
 
@@ -379,15 +412,12 @@ impl Prompt {
 
         let ip_request_address = Input::with_theme(&self.theme)
             .with_prompt("Where do you want to request your public IP address?")
-            .default("http://ip.clara.net".parse().unwrap())
+            .default("https://ip.clara.net".parse().unwrap())
             .interact()?;
 
-        Ok(Some(Config {
-            token: token,
-            ip_request_address: Some(ip_request_address),
-            defaults: None,
-            locations: Vec::<Location>::new(),
-        }))
+        let mut config = Config::with(token);
+        config.ip_request_address = Some(ip_request_address);
+        Ok(Some(config))
     }
 
     /// Prompt for optional configuration elements.
@@ -409,16 +439,13 @@ impl Prompt {
             Err(_) => exit(1),
         };
 
-        Ok(Some(Config {
-            token: config.token.clone(),
-            ip_request_address: config.ip_request_address.clone(),
-            defaults: Some(StatusConfig {
-                text: status.text,
-                emoji: status.emoji,
-                expire_after_hours: status.expire_after_hours,
-            }),
-            locations: config.locations.clone(),
-        }))
+        let mut new_config = config.clone();
+        new_config.defaults = Some(StatusConfig {
+            text: status.text,
+            emoji: status.emoji,
+            expire_after_hours: status.expire_after_hours,
+        });
+        Ok(Some(new_config))
     }
 
     /// Prompt for setup location.
@@ -499,6 +526,17 @@ fn setup_logger(log_level: log::LevelFilter) -> Result<(), fern::InitError> {
         .chain(std::io::stdout())
         .apply()?;
     Ok(())
+}
+
+fn print_ip(ip: &IpAddr) {
+    println!("{}: {}",
+        style("Current location's public IP").bold(),
+        style(ip).cyan()
+    );
+}
+
+fn print_no_modification() {
+    println!("{}", style("No modification have been performed.").yellow());
 }
 
 fn print_configuration_saved() {
