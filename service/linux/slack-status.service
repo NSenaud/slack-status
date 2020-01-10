@@ -1,8 +1,9 @@
 [Unit]
 Description=Update Slack status with current location
+After=suspend.target hibernate.target hybrid-sleep.target
 
 [Service]
 ExecStart=/usr/local/bin/slack-status -vv -n
 
 [Install]
-WantedBy=timers.target
+WantedBy=timers.target suspend.target hibernate.target hybrid-sleep.target
