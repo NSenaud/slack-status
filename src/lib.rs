@@ -7,276 +7,29 @@ extern crate serde_json;
 #[macro_use]
 extern crate simple_error;
 
-use std::fs::File;
+pub mod cache;
+pub mod config;
+pub mod location;
+
 use std::error::Error;
-use std::fmt;
-use std::fs::create_dir_all;
-use std::io::prelude::*;
 use std::net::IpAddr;
-use std::path::PathBuf;
 use std::str::FromStr;
 
 use chrono::prelude::*;
 use chrono::Duration;
-use directories::ProjectDirs;
 use reqwest::blocking::*;
 use serde_json::Value;
+
+pub use cache::{Cache, StatusCache};
+pub use config::{Config, StatusConfig};
+pub use location::Location;
 
 pub type BoxResult<T> = Result<T,Box<dyn Error>>;
 pub type ReqwestResult = Result<reqwest::blocking::Response, reqwest::Error>;
 
-/// Slack Status, as sent to the API.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct StatusConfig {
-    pub text: String,
-    pub emoji: String,
-    pub expire_after_hours: Option<i64>,
-}
-
-/// Slack Status, as sent to the API.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct StatusCache {
-    pub text: String,
-    pub emoji: String,
-    pub expiration: i64,
-}
-
-/// A Location matches an IP address (either IPv4 or IPv6) with a Status.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct Location {
-    pub ip: IpAddr,
-    pub text: String,
-    pub emoji: String,
-    pub expire_after_hours: Option<i64>,
-}
-
-/// Config, as read/write in configuration TOML file.
-///
-/// * token: Slack token, must have r/w right on user profile.
-/// * ip_request_address: URL to request public IP address.
-/// * locations: List of Location to set profile.
-/// * ignore_ips: List of public IPs to ignore when setting status, such as
-///               VPNs output addresses. In this case the cached status is
-///               used instead.
-/// * defaults: Status to use when you have no status associated to location.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Config {
-    pub token: String,
-    pub ip_request_address: Option<String>,
-    pub ignore_ips: Vec<IpAddr>,
-    pub locations: Vec<Location>,
-    pub defaults: Option<StatusConfig>,
-}
-
-/// Cache status and keep track if it was manually set.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Cache {
-    pub status: StatusCache,
-    pub manually_set: bool,
-}
-
 pub struct SlackStatus<'a> {
     client: Client,
     pub config: &'a Config,
-}
-
-impl fmt::Display for StatusConfig {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.emoji, self.text)
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} => {} {}", self.ip, self.emoji, self.text)
-    }
-}
-
-impl Config {
-    /// Create minimal config with token.
-    pub fn with(token: String) -> Config {
-        Config {
-            token: token,
-            ip_request_address: None,
-            ignore_ips: Vec::<IpAddr>::new(),
-            locations: Vec::<Location>::new(),
-            defaults: None,
-        }
-    }
-
-    /// Get the configuration file path either provided by the user or look at
-    /// default location:
-    ///
-    /// * Linux: /home/alice/.config/slack-status/config.toml
-    /// * Mac: /Users/Alice/Library/Preferences/com.nsd.slack-status/config.toml
-    /// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\config\config.toml
-    fn get_file_path(path: Option<&str>) -> Option<PathBuf> {
-        // User-provided configuration path.
-        if let Some(path) = path {
-            debug!("Looking for configuration file in: {:?}", path);
-            Some(PathBuf::from(path))
-        // Default OS location configuration path.
-        } else if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
-            let config_dir = proj_dirs.config_dir();
-            debug!("Looking for configuration file in: {:?}", config_dir);
-
-            if !config_dir.to_path_buf().exists() {
-                debug!("Config directory does not exists, creating it.");
-                create_dir_all(config_dir.to_str().unwrap()).unwrap();
-            }
-
-            Some(config_dir.to_path_buf().join("config.toml"))
-        } else {
-            warn!("Cannot find configuration directory.");
-            None
-        }
-    }
-
-    /// Read configuration either from path provided by the user or look at
-    /// default location.
-    pub fn read(path: Option<&str>) -> BoxResult<Option<Config>> {
-        if let Some(config_file_path) = Config::get_file_path(path) {
-            match File::open(config_file_path) {
-                Ok(mut f) => {
-                    let mut contents = String::new();
-                    f.read_to_string(&mut contents)
-                        .expect("something went wrong reading the file");
-
-                    let config = match toml::from_str(contents.as_str()) {
-                        Ok(c) => c,
-                        Err(e) => bail!("Deserialization error: {}", e),
-                    };
-
-                    Ok(Some(config))
-                }
-                Err(e) => {
-                    warn!("Cannot open configuration file at: {}.", e);
-                    Ok(None)
-                }
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Save configuration either at path provided by the user or at default
-    /// location.
-    pub fn save(&self, path: Option<&str>) -> BoxResult<()> {
-        if let Some(config_file_path) = Config::get_file_path(path) {
-            match File::create(config_file_path) {
-                Ok(mut f) => {
-                    let config = match toml::to_string_pretty(self) {
-                        Ok(c) => c,
-                        Err(e) => bail!("Serialization error: {}", e),
-                    };
-                    match f.write_all(config.as_bytes()) {
-                        Ok(_) => {
-                            info!("Configuration file saved");
-                            Ok(())
-                        },
-                        Err(e) => bail!(e),
-                    }
-                }
-                Err(e) => {
-                    bail!("Cannot open configuration file at: {}.", e);
-                }
-            }
-        } else {
-            bail!("Cannot find configuration file.");
-        }
-    }
-}
-
-impl Cache {
-    /// Get the cache file path either provided by the user or look at
-    /// default location:
-    ///
-    /// * Linux: /home/alice/.cache/slack-status/status.json
-    /// * Mac: /Users/Alice/Library/Caches/com.nsd.slack-status/status.json
-    /// * Windows: C:\Users\Alice\AppData\Roaming\nsd\slack-status\cache\status.json
-    fn get_file_path() -> Option<PathBuf> {
-        // Default OS location configuration path.
-        if let Some(proj_dirs) = ProjectDirs::from("com", "nsd", "slack-status") {
-            let cache_dir = proj_dirs.cache_dir();
-            debug!("Looking for cache file in: {:?}", cache_dir);
-
-            if !cache_dir.to_path_buf().exists() {
-                debug!("Cache directory does not exists, creating it.");
-                create_dir_all(cache_dir.to_str().unwrap()).unwrap();
-            }
-
-            Some(cache_dir.to_path_buf().join("status.json"))
-        } else {
-            warn!("Cannot find application cache directory.");
-            None
-        }
-    }
-
-    /// Read cache file from default OS location.
-    pub fn read() -> BoxResult<Option<Cache>> {
-        if let Some(cache_file_path) = Cache::get_file_path() {
-            match File::open(cache_file_path) {
-                Ok(mut f) => {
-                    let mut contents = String::new();
-                    f.read_to_string(&mut contents)
-                        .expect("something went wrong reading the file");
-
-                    let cache = match serde_json::from_str(contents.as_str()) {
-                        Ok(c) => c,
-                        Err(e) => bail!("Deserialization error: {}", e),
-                    };
-
-                    Ok(Some(cache))
-                }
-                Err(e) => {
-                    warn!("Cannot read cache directory: {}.", e);
-                    Ok(None)
-                }
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Save cache file at default OS location.
-    pub fn save(&self) -> BoxResult<()> {
-        if let Some(cache_file_path) = Cache::get_file_path() {
-            match File::create(cache_file_path) {
-                Ok(mut f) => {
-                    debug!("Cache file: {:#?}", f);
-
-                    let cache = match serde_json::to_string(self) {
-                        Ok(c) => c,
-                        Err(e) => bail!("Serialization error: {}", e),
-                    };
-                    debug!("Cache file content: {}", cache);
-
-                    match f.write_all(cache.as_bytes()) {
-                        Ok(_) => {
-                            info!("Cache file saved");
-                            Ok(())
-                        },
-                        Err(e) => bail!(e),
-                    }
-                }
-                Err(e) => {
-                    bail!("Cannot read cache directory: {}.", e)
-                }
-            }
-        } else {
-            bail!("Cannot find application cache directory.");
-        }
-    }
-
-    /// Reset cache (remove cache file).
-    pub fn reset() -> BoxResult<()> {
-        if let Some(cache_file_path) = Cache::get_file_path() {
-            std::fs::remove_file(cache_file_path)?;
-            Ok(())
-        } else {
-            bail!("Cannot find application cache directory.");
-        }
-    }
 }
 
 impl<'a> SlackStatus<'a> {
